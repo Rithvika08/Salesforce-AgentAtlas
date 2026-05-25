@@ -1,0 +1,53 @@
+.application-layout {
+
+    display: grid;
+
+    grid-template-columns: 280px 1fr;
+
+    gap: 32px;
+
+    align-items: start;
+
+    padding: 24px;
+
+}
+
+.sidebar {
+
+    width: 100%;
+
+}
+
+.content-area {
+
+    width: 100%;
+
+}
+
+.sticky-footer {
+
+    display: flex;
+
+    justify-content: center;
+
+    gap: 16px;
+
+    margin-top: 32px;
+
+}
+
+.text-saving {
+
+    color: #0176d3;
+
+    font-weight: 600;
+
+}
+
+.text-saved {
+
+    color: #2e844a;
+
+    font-weight: 600;
+
+}

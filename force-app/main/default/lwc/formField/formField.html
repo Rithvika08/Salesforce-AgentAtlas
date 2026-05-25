@@ -1,0 +1,102 @@
+<template>
+
+    <div class="slds-form-element">
+
+        <!-- PICKLIST -->
+
+        <template if:true={isPicklist}>
+
+            <lightning-combobox
+                name={fieldConfig.id}
+                label={fieldConfig.label}
+                value={currentValue}
+                placeholder="Select an option"
+                options={options}
+                required={fieldConfig.required}
+                field-level-help={fieldConfig.helpText}
+                onchange={handlePicklistChange}
+                onblur={handleBlur}
+                class="input-node">
+
+            </lightning-combobox>
+
+        </template>
+
+        <!-- TEXTAREA -->
+
+        <template if:true={isTextarea}>
+
+            <lightning-textarea
+                name={fieldConfig.id}
+                label={fieldConfig.label}
+                value={currentValue}
+                required={fieldConfig.required}
+                field-level-help={fieldConfig.helpText}
+                onchange={handleInputChange}
+                onblur={handleBlur}
+                class="input-node">
+
+            </lightning-textarea>
+
+        </template>
+
+        <!-- RADIO GROUP -->
+
+        <template if:true={isRadio}>
+
+            <lightning-radio-group
+                name={fieldConfig.id}
+                label={fieldConfig.label}
+                options={options}
+                value={currentValue}
+                type="radio"
+                required={fieldConfig.required}
+                onchange={handleRadioChange}
+                onblur={handleBlur}
+                class="input-node">
+
+            </lightning-radio-group>
+
+        </template>
+
+        <!-- CHECKBOX -->
+
+        <template if:true={isCheckbox}>
+
+            <lightning-input
+                type="checkbox"
+                name={fieldConfig.id}
+                label={fieldConfig.label}
+                checked={currentValue}
+                required={fieldConfig.required}
+                field-level-help={fieldConfig.helpText}
+                onchange={handleInputChange}
+                onblur={handleBlur}
+                class="input-node">
+
+            </lightning-input>
+
+        </template>
+
+        <!-- STANDARD INPUT -->
+
+        <template if:true={isStandardInput}>
+
+            <lightning-input
+                type={fieldConfig.type}
+                name={fieldConfig.id}
+                label={fieldConfig.label}
+                value={currentValue}
+                required={fieldConfig.required}
+                field-level-help={fieldConfig.helpText}
+                onchange={handleInputChange}
+                onblur={handleBlur}
+                class="input-node">
+
+            </lightning-input>
+
+        </template>
+
+    </div>
+
+</template>

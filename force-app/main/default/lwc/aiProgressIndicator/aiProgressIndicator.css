@@ -1,0 +1,25 @@
+.progress-container {
+
+    display: flex;
+
+    align-items: center;
+
+    gap: 1rem;
+
+    padding: 1rem;
+
+    background: white;
+
+    border-radius: 8px;
+
+    margin-top: 1rem;
+
+}
+
+.status-text {
+
+    font-weight: 600;
+
+    color: #16325c;
+
+}

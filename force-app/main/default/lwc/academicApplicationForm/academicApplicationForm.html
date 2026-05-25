@@ -1,0 +1,177 @@
+<template> 
+
+    <lightning-card
+        title="Academic Application Intake Portal"
+        icon-name="standard:education">
+
+        <!-- MAIN LAYOUT -->
+
+        <div class="application-layout">
+
+            <!-- SIDEBAR -->
+
+            <div class="sidebar">
+
+                <c-application-progress-sidebar
+                    current-page={currentPage}>
+                </c-application-progress-sidebar>
+
+            </div>
+
+            <!-- CONTENT -->
+
+            <div class="content-area">
+
+                <!-- AI AUTO FILL -->
+
+                <c-ai-form-filler-button
+
+                    form-data={formData}
+
+                    current-page={currentPage}
+
+                    form-config={schemaQuestions}
+
+                    submission-id={submissionId}
+
+                    onaifilled={handleAIFilled}>
+
+                </c-ai-form-filler-button>
+
+                <!-- AI PROGRESS -->
+
+                <c-ai-progress-indicator
+
+                    is-loading={aiLoading}
+
+                    status-message={aiStatus}>
+
+                </c-ai-progress-indicator>
+
+                <!-- SAVE STATUS -->
+
+                <div class="status-indicator-container slds-m-bottom_medium">
+
+                    <template if:true={isSaving}>
+
+                        <span class="text-saving">
+
+                            Saving...
+
+                        </span>
+
+                    </template>
+
+                    <template if:false={isSaving}>
+
+                        <span class="text-saved">
+
+                            {saveStatus}
+
+                        </span>
+
+                    </template>
+
+                </div>
+
+                <!-- FORM -->
+
+                <template if:false={isSubmitted}>
+
+                    <c-dynamicformpage
+                        current-page={currentPage}
+                        form-data={formData}
+                        full-schema={schemaQuestions}
+                        onfieldchange={handleFieldChange}>
+
+                    </c-dynamicformpage>
+
+                </template>
+
+                <!-- SUCCESS -->
+
+                <template if:true={isSubmitted}>
+
+                    <div class="success-panel">
+
+                        <lightning-icon
+                            icon-name="utility:success"
+                            size="large">
+
+                        </lightning-icon>
+
+                        <h2 class="slds-text-heading_large slds-m-top_medium">
+
+                            Application Submitted Successfully
+
+                        </h2>
+
+                        <p class="slds-m-top_small">
+
+                            Reference Number:
+
+                        </p>
+
+                        <div class="display-id-box slds-m-top_small">
+
+                            <strong>
+
+                                {submittedReference}
+
+                            </strong>
+
+                        </div>
+
+                    </div>
+
+                </template>
+
+                <!-- BUTTONS -->
+
+                <div class="sticky-footer">
+
+                    <button
+                        class="slds-button slds-button_neutral"
+                        onclick={handlePrevious}
+                        disabled={isFirstPage}
+                        type="button">
+
+                        Previous
+
+                    </button>
+
+                    <template if:false={isLastPage}>
+
+                        <button
+                            class="slds-button slds-button_brand"
+                            onclick={handleNext}
+                            type="button">
+
+                            Next
+
+                        </button>
+
+                    </template>
+
+                    <template if:true={isLastPage}>
+
+                        <button
+                            class="slds-button slds-button_success"
+                            onclick={handleSubmit}
+                            type="button">
+
+                            Submit Application
+
+                        </button>
+
+                    </template>
+
+                </div>
+
+            </div>
+
+        </div>
+
+    </lightning-card>
+
+</template>

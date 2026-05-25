@@ -1,0 +1,37 @@
+/* ALL FIELD LABELS */
+
+.slds-form-element__label {
+
+    font-weight: 700 !important;
+
+    font-size: 1rem;
+
+    color: #1e1e1e;
+
+}
+
+/* REQUIRED ASTERISK */
+
+.slds-required {
+
+    color: #c23934;
+
+    font-weight: 700;
+
+}
+
+/* HELP ICON */
+
+lightning-helptext {
+
+    margin-left: 0.25rem;
+
+}
+
+/* INPUT SPACING */
+
+.slds-form-element {
+
+    margin-bottom: 1.5rem;
+
+}

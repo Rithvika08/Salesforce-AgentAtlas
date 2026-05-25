@@ -1,0 +1,35 @@
+<template> 
+    <div>
+
+        <h2
+            class="slds-text-heading_large slds-m-bottom_large slds-border_bottom slds-p-bottom_small">
+
+            {pageTitle}
+
+        </h2>
+
+        <div class="slds-grid slds-wrap">
+
+            <template
+                for:each={activeFields}
+                for:item="field">
+
+                <div
+                    key={field.id}
+                    class="slds-size_1-of-1 slds-medium-size_1-of-2 slds-p-around_small">
+
+                    <c-form-field
+                        field-config={field}
+                        current-value={field.currentValue}
+                        onvaluechange={handleFieldChange}>
+                    </c-form-field>
+
+                </div>
+
+            </template>
+
+        </div>
+
+    </div>
+
+</template>
