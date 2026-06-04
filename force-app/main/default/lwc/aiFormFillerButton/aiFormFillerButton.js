@@ -26,6 +26,8 @@ export default class AiFormFillerButton
 
     @track totalFieldsCount = 0;
 
+    @track sourceBreakdown = [];
+
     @track processingMessage =
         'AI is analyzing your data...';
 
@@ -115,11 +117,16 @@ export default class AiFormFillerButton
     async processResults(result) {
 
         const filledData =
-            result.filledFields;
+            result?.filledFields || {};
 
         this.filledFieldsCount =
 
             Object.keys(filledData).length;
+
+        this.sourceBreakdown =
+            this.buildSourceBreakdown(
+                filledData
+            );
 
         // SEND DATA TO PARENT
 
@@ -138,6 +145,9 @@ export default class AiFormFillerButton
                         metadata:
                             result.metadata,
 
+                        aiComparisonResults:
+                            result.aiComparisonResults,
+
                         confidence:
                             result.overallConfidence
 
@@ -148,6 +158,7 @@ export default class AiFormFillerButton
             );
 
         this.dispatchEvent(fillEvent);
+      //  System.debug(('fillEvent-->'+fillEvent));
 
         // VISUAL EFFECT
 
@@ -273,6 +284,12 @@ export default class AiFormFillerButton
 
                 break;
 
+            case 'sources':
+
+                this.showDetailsModal();
+
+                break;
+
         }
 
     }
@@ -293,17 +310,182 @@ export default class AiFormFillerButton
 
     showDetailsModal() {
 
+        if (
+
+            !this.hasSourceBreakdown
+
+        ) {
+
+            this.dispatchEvent(
+
+                new ShowToastEvent({
+
+                    title: 'No Source Details',
+
+                    message:
+                        'No combined source fields were returned for the latest fill.',
+
+                    variant: 'info'
+
+                })
+
+            );
+
+            return;
+
+        }
+
+        alert(
+            this.sourceBreakdown.join(
+                '\n\n'
+            )
+        );
+
         this.dispatchEvent(
 
-            new CustomEvent('showdetails')
+            new CustomEvent(
+                'showdetails',
+                {
+                    detail: {
+                        sourceBreakdown:
+                            this.sourceBreakdown
+                    }
+                }
+            )
 
         );
+
+    }
+
+    get hasSourceBreakdown() {
+
+        return Array.isArray(
+            this.sourceBreakdown
+        ) &&
+            this.sourceBreakdown.length > 0;
+
+    }
+
+    get noSourceBreakdown() {
+
+        return !this.hasSourceBreakdown;
+
+    }
+
+    buildSourceBreakdown(filledData) {
+
+        return Object.keys(
+            filledData || {}
+        )
+            .map(questionId => {
+
+                const sourceFields =
+                    filledData[questionId]?.sourceFields || [];
+
+                const realSourceFields =
+                    Array.isArray(
+                        sourceFields
+                    )
+                        ? sourceFields
+                            .map(sourceField => {
+
+                                return this.normalizeSourceField(
+                                    sourceField
+                                );
+
+                            })
+                            .filter(sourceField => {
+
+                                return !this.isGenericSourceField(
+                                    sourceField
+                                );
+
+                            })
+                        : [];
+
+                if (
+
+                    realSourceFields.length < 2
+
+                ) {
+
+                    return null;
+
+                }
+
+                return `${this.getQuestionLabel(questionId)}: ${realSourceFields.join(', ')}`;
+
+            })
+            .filter(Boolean);
+
+    }
+
+    normalizeSourceField(sourceField) {
+
+        return String(
+            sourceField || ''
+        )
+            .replace(/^fields merged:\s*/i, '')
+            .replace(/^combined from:\s*/i, '')
+            .replace(/^extracted from:\s*/i, '')
+            .replace(/^fetched from:\s*/i, '')
+            .trim();
+
+    }
+
+    isGenericSourceField(sourceField) {
+
+        const lowerSource =
+            this.normalizeSourceField(
+                sourceField
+            ).toLowerCase();
+
+        return !lowerSource ||
+            lowerSource === 'prompt builder' ||
+            lowerSource === 'einstein prompt builder' ||
+            lowerSource === 'applicant knowledge' ||
+            lowerSource === 'ai' ||
+            lowerSource === 'chat prompt' ||
+            lowerSource.includes(
+                'prompt builder'
+            ) ||
+            lowerSource.includes(
+                'openai semantic extraction'
+            );
+
+    }
+
+    getQuestionLabel(questionId) {
+
+        const field =
+            Array.isArray(
+                this.formConfig
+            )
+                ? this.formConfig.find(config => {
+
+                    return config.id === questionId ||
+                        config.Question_Id__c === questionId ||
+                        config.questionId === questionId;
+
+                })
+                : null;
+
+        return field?.label ||
+            field?.MasterLabel ||
+            field?.questionText ||
+            questionId;
 
     }
 
     // FIELD COUNT
 
     calculateTotalFields() {
+
+        if (!Array.isArray(this.formConfig)) {
+
+            return 0;
+
+        }
 
         if (
             this.fillScope === 'fill-current'
@@ -335,6 +517,22 @@ export default class AiFormFillerButton
             error
         );
 
+        const message =
+            error?.body?.message ||
+            error?.message ||
+            'An error occurred while filling the form. Please try again.';
+
+        console.error(
+            'AI Fill Error Details:',
+            JSON.stringify(
+                {
+                    status: error?.status,
+                    statusText: error?.statusText,
+                    message
+                }
+            )
+        );
+
         this.dispatchEvent(
 
             new ShowToastEvent({
@@ -342,10 +540,7 @@ export default class AiFormFillerButton
                 title: 'AI Fill Failed',
 
                 message:
-
-                    error.body?.message ||
-
-                    'An error occurred while filling the form. Please try again.',
+                    message,
 
                 variant: 'error'
 

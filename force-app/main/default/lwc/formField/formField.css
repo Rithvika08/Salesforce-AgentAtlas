@@ -35,3 +35,27 @@ lightning-helptext {
     margin-bottom: 1.5rem;
 
 }
+
+.source-fields-used {
+
+    margin-top: 0.35rem;
+
+    color: #5c5c5c;
+
+    font-size: 0.75rem;
+
+    line-height: 1.25;
+
+}
+
+.ai-field-message {
+
+    margin-top: 0.35rem;
+
+    color: #ba0517;
+
+    font-size: 0.75rem;
+
+    line-height: 1.25;
+
+}

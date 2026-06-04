@@ -6,6 +6,10 @@ export default class Dynamicformpage extends LightningElement {
 
     @api formData = {};
 
+    @api sourceBreakdown = {};
+
+    @api aiFieldMessages = {};
+
     // FULL FORM SCHEMA
 
     @api fullSchema = [];
@@ -145,10 +149,111 @@ export default class Dynamicformpage extends LightningElement {
                         ].value
 
                         : ''
+                ,
+
+                sourceFieldsText:
+
+                    this.sanitizeSourceFieldsText(
+                        this.sourceBreakdown[
+                            field.id ||
+                            field.Question_Id__c
+                        ]?.sourcesText || ''
+                    ),
+
+                aiMessage:
+
+                    this.aiFieldMessages[
+                        field.id ||
+                        field.Question_Id__c
+                    ] || ''
 
             };
 
         });
+
+    }
+
+    sanitizeSourceFieldsText(sourceFieldsText) {
+
+        let normalizedSourceFieldsText =
+            sourceFieldsText;
+
+        if (
+
+            typeof normalizedSourceFieldsText === 'string' &&
+            normalizedSourceFieldsText.trim().startsWith(
+                '['
+            )
+
+        ) {
+
+            try {
+
+                const parsedSourceFields =
+                    JSON.parse(
+                        normalizedSourceFieldsText
+                    );
+
+                if (
+
+                    Array.isArray(
+                        parsedSourceFields
+                    )
+
+                ) {
+
+                    normalizedSourceFieldsText =
+                        parsedSourceFields.join(
+                            ','
+                        );
+
+                }
+
+            } catch (error) {
+
+                normalizedSourceFieldsText =
+                    sourceFieldsText;
+
+            }
+
+        }
+
+        return String(
+            normalizedSourceFieldsText || ''
+        )
+            .split(',')
+            .map(sourceField => {
+
+                return String(
+                    sourceField || ''
+                )
+                    .replace(/^fields merged:\s*/i, '')
+                    .replace(/^combined from:\s*/i, '')
+                    .replace(/^extracted from:\s*/i, '')
+                    .replace(/^fetched from:\s*/i, '')
+                    .trim();
+
+            })
+            .filter(sourceField => {
+
+                const lowerSource =
+                    sourceField.toLowerCase();
+
+                return sourceField &&
+                    lowerSource !== 'prompt builder' &&
+                    lowerSource !== 'einstein prompt builder' &&
+                    lowerSource !== 'applicant knowledge' &&
+                    lowerSource !== 'ai' &&
+                    lowerSource !== 'chat prompt' &&
+                    !lowerSource.includes(
+                        'prompt builder'
+                    ) &&
+                    !lowerSource.includes(
+                        'openai semantic extraction'
+                    );
+
+            })
+            .join(', ');
 
     }
 
@@ -192,6 +297,41 @@ export default class Dynamicformpage extends LightningElement {
         });
 
         return allValid;
+
+    }
+
+    @api
+    refreshValidityForFields(questionIds = []) {
+
+        const ids =
+            new Set(
+                questionIds
+            );
+
+        const renderers =
+
+            this.template.querySelectorAll(
+                'c-form-field'
+            );
+
+        renderers.forEach(renderer => {
+
+            const fieldId =
+                renderer.fieldConfig?.id;
+
+            if (
+
+                ids.has(
+                    fieldId
+                )
+
+            ) {
+
+                renderer.validate();
+
+            }
+
+        });
 
     }
 

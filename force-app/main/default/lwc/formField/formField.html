@@ -97,6 +97,26 @@
 
         </template>
 
+        <template if:true={hasSourceFields}>
+
+            <div class="source-fields-used">
+
+                {sourceFieldsLabel}: {sourceFieldsText}
+
+            </div>
+
+        </template>
+
+        <template if:true={fieldConfig.aiMessage}>
+
+            <div class="ai-field-message">
+
+                {fieldConfig.aiMessage}
+
+            </div>
+
+        </template>
+
     </div>
 
 </template>

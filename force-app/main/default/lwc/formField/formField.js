@@ -69,6 +69,109 @@ export default class FormField
 
     }
 
+    get hasSourceFields() {
+
+        return this.sourceFields.length > 1;
+
+    }
+
+    get sourceFields() {
+
+        let sourceText =
+            this.fieldConfig?.sourceFieldsText || '';
+
+        if (
+
+            typeof sourceText === 'string' &&
+            sourceText.trim().startsWith(
+                '['
+            )
+
+        ) {
+
+            try {
+
+                const parsedSourceFields =
+                    JSON.parse(
+                        sourceText
+                    );
+
+                if (
+
+                    Array.isArray(
+                        parsedSourceFields
+                    )
+
+                ) {
+
+                    sourceText =
+                        parsedSourceFields.join(
+                            ','
+                        );
+
+                }
+
+            } catch (error) {
+
+                sourceText =
+                    this.fieldConfig?.sourceFieldsText || '';
+
+            }
+
+        }
+
+        return sourceText
+            .split(',')
+            .map(sourceField => this.normalizeSourceField(sourceField))
+            .filter(sourceField => {
+
+                const lowerSource =
+                    sourceField.toLowerCase();
+
+                return sourceField &&
+                    lowerSource !== 'prompt builder' &&
+                    lowerSource !== 'einstein prompt builder' &&
+                    lowerSource !== 'applicant knowledge' &&
+                    lowerSource !== 'ai' &&
+                    lowerSource !== 'chat prompt' &&
+                    !lowerSource.includes(
+                        'prompt builder'
+                    ) &&
+                    !lowerSource.includes(
+                        'openai semantic extraction'
+                    );
+
+            });
+
+    }
+
+    normalizeSourceField(sourceField) {
+
+        return String(
+            sourceField || ''
+        )
+            .replace(/^fields merged:\s*/i, '')
+            .replace(/^combined from:\s*/i, '')
+            .replace(/^extracted from:\s*/i, '')
+            .replace(/^fetched from:\s*/i, '')
+            .trim();
+
+    }
+
+    get sourceFieldsText() {
+
+        return this.sourceFields.join(
+            ', '
+        );
+
+    }
+
+    get sourceFieldsLabel() {
+
+        return 'Fields merged';
+
+    }
+
     // OPTIONS
 
     get options() {

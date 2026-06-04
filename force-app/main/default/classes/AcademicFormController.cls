@@ -207,6 +207,15 @@ public without sharing class AcademicFormController {
     
             Form_Submission__c draft =
                 drafts[0];
+
+            String confidenceFieldApiName =
+                getFormResponseConfidenceFieldApiName();
+
+            Map<Id, Object> confidenceByResponseId =
+                getSavedResponseConfidenceById(
+                    draft.Id,
+                    confidenceFieldApiName
+                );
     
             result.put(
                 'submissionId',
@@ -235,6 +244,24 @@ public without sharing class AcademicFormController {
                     'value',
                     response.Response_Value__c
                 );
+
+                if (
+                    confidenceByResponseId.containsKey(
+                        response.Id
+                    )
+                ) {
+
+                    valueObj.put(
+                        'confidence',
+                        normalizeStoredConfidenceForFormData(
+                            confidenceFieldApiName,
+                            confidenceByResponseId.get(
+                                response.Id
+                            )
+                        )
+                    );
+
+                }
     
                 formData.put(
                     response.Question_Id__c,
@@ -410,6 +437,9 @@ public without sharing class AcademicFormController {
             JSON.deserializeUntyped(
                 formData
             );
+
+        String confidenceFieldApiName =
+            getFormResponseConfidenceFieldApiName();
     
         /*
          * UPSERT LISTS
@@ -443,6 +473,16 @@ public without sharing class AcademicFormController {
                 String.valueOf(
                     valueObj.get('value')
                 );
+
+            Decimal confidence =
+                getResponseConfidence(
+                    valueObj
+                );
+
+            Boolean confidenceProvided =
+                hasResponseConfidence(
+                    valueObj
+                );
     
             /*
              * UPDATE EXISTING
@@ -464,6 +504,13 @@ public without sharing class AcademicFormController {
     
                 existingResponse.Response_Value__c =
                     responseValue;
+
+                applyResponseConfidence(
+                    existingResponse,
+                    confidenceFieldApiName,
+                    confidence,
+                    confidenceProvided
+                );
     
                 responsesToUpdate.add(
                     existingResponse
@@ -490,6 +537,13 @@ public without sharing class AcademicFormController {
                             responseValue
     
                     );
+
+                applyResponseConfidence(
+                    newResponse,
+                    confidenceFieldApiName,
+                    confidence,
+                    confidenceProvided
+                );
     
                 responsesToInsert.add(
                     newResponse
@@ -530,6 +584,325 @@ public without sharing class AcademicFormController {
     
         return result;
     
+    }
+
+    private static Map<Id, Object> getSavedResponseConfidenceById(
+
+        Id submissionId,
+
+        String confidenceFieldApiName
+
+    ) {
+
+        Map<Id, Object> confidenceByResponseId =
+            new Map<Id, Object>();
+
+        if (
+            submissionId == null ||
+            String.isBlank(
+                confidenceFieldApiName
+            )
+        ) {
+
+            return confidenceByResponseId;
+
+        }
+
+        String query =
+            'SELECT Id, ' +
+            confidenceFieldApiName +
+            ' FROM Form_Response__c WHERE Form_Submission__c = :submissionId';
+
+        for (
+            SObject response :
+            Database.query(
+                query
+            )
+        ) {
+
+            Object confidence =
+                response.get(
+                    confidenceFieldApiName
+                );
+
+            if (
+                confidence != null
+            ) {
+
+                confidenceByResponseId.put(
+                    (Id) response.get(
+                        'Id'
+                    ),
+                    confidence
+                );
+
+            }
+
+        }
+
+        return confidenceByResponseId;
+
+    }
+
+    private static String getFormResponseConfidenceFieldApiName() {
+
+        Map<String, Schema.SObjectField> fieldMap =
+            Form_Response__c.SObjectType.getDescribe().fields.getMap();
+
+        for (
+            String candidate :
+            new List<String>{
+                'Confidence__c',
+                'AI_Confidence__c',
+                'Match_Confidence__c',
+                'Field_Confidence__c',
+                'Field_Match_Confidence__c',
+                'Extraction_Confidence__c',
+                'AI_Extraction_Confidence__c',
+                'Confidence_Score__c',
+                'AI_Confidence_Score__c'
+            }
+        ) {
+
+            if (
+                fieldMap.containsKey(
+                    candidate
+                )
+            ) {
+
+                return candidate;
+
+            }
+
+        }
+
+        return null;
+
+    }
+
+    private static Decimal getResponseConfidence(
+
+        Map<String, Object> valueObj
+
+    ) {
+
+        if (
+            valueObj == null
+        ) {
+
+            return null;
+
+        }
+
+        Object rawConfidence =
+            valueObj.containsKey(
+                'confidence'
+            )
+                ? valueObj.get(
+                    'confidence'
+                )
+                : valueObj.get(
+                    'bestMatchConfidence'
+                );
+
+        if (
+            rawConfidence == null ||
+            String.isBlank(
+                String.valueOf(
+                    rawConfidence
+                )
+            )
+        ) {
+
+            return null;
+
+        }
+
+        try {
+
+            return Decimal.valueOf(
+                String.valueOf(
+                    rawConfidence
+                ).replace(
+                    '%',
+                    ''
+                )
+            );
+
+        } catch (Exception e) {
+
+            return null;
+
+        }
+
+    }
+
+    private static Boolean hasResponseConfidence(
+
+        Map<String, Object> valueObj
+
+    ) {
+
+        return valueObj != null &&
+            (
+                valueObj.containsKey(
+                    'confidence'
+                ) ||
+                valueObj.containsKey(
+                    'bestMatchConfidence'
+                )
+            );
+
+    }
+
+    private static Object normalizeStoredConfidenceForFormData(
+
+        String confidenceFieldApiName,
+
+        Object storedConfidence
+
+    ) {
+
+        if (
+            storedConfidence == null ||
+            String.isBlank(
+                confidenceFieldApiName
+            )
+        ) {
+
+            return storedConfidence;
+
+        }
+
+        Schema.DescribeFieldResult fieldDescribe =
+            Form_Response__c.SObjectType
+                .getDescribe()
+                .fields
+                .getMap()
+                .get(
+                    confidenceFieldApiName
+                )
+                .getDescribe();
+
+        if (
+            fieldDescribe.getType() !=
+            Schema.DisplayType.Percent
+        ) {
+
+            return storedConfidence;
+
+        }
+
+        try {
+
+            Decimal confidence =
+                Decimal.valueOf(
+                    String.valueOf(
+                        storedConfidence
+                    )
+                );
+
+            return confidence > 1
+                ? confidence / 100
+                : confidence;
+
+        } catch (Exception e) {
+
+            return storedConfidence;
+
+        }
+
+    }
+
+    private static void applyResponseConfidence(
+
+        Form_Response__c response,
+
+        String confidenceFieldApiName,
+
+        Decimal confidence,
+
+        Boolean confidenceProvided
+
+    ) {
+
+        if (
+            response == null ||
+            String.isBlank(
+                confidenceFieldApiName
+            )
+        ) {
+
+            return;
+
+        }
+
+        Schema.DescribeFieldResult fieldDescribe =
+            Form_Response__c.SObjectType
+                .getDescribe()
+                .fields
+                .getMap()
+                .get(
+                    confidenceFieldApiName
+                )
+                .getDescribe();
+
+        if (
+            confidence == null
+        ) {
+
+            if (
+                confidenceProvided == false
+            ) {
+
+                response.put(
+                    confidenceFieldApiName,
+                    null
+                );
+
+            }
+
+            return;
+
+        }
+
+        Decimal numericValueToStore =
+            confidence;
+
+        if (
+            fieldDescribe.getType() ==
+            Schema.DisplayType.Percent &&
+            numericValueToStore <= 1
+        ) {
+
+            numericValueToStore =
+                numericValueToStore * 100;
+
+        }
+
+        if (
+            fieldDescribe.getType() ==
+            Schema.DisplayType.String ||
+            fieldDescribe.getType() ==
+            Schema.DisplayType.TextArea
+        ) {
+
+            response.put(
+                confidenceFieldApiName,
+                String.valueOf(
+                    numericValueToStore
+                )
+            );
+
+        } else {
+
+            response.put(
+                confidenceFieldApiName,
+                numericValueToStore
+            );
+
+        }
+
     }
     
     // SUBMIT FORM

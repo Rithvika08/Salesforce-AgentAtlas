@@ -38,6 +38,15 @@
 
                 </c-ai-form-filler-button>
 
+                <c-ai-form-filler-chat
+                    form-data={formData}
+                    current-page={currentPage}
+                    form-config={schemaQuestions}
+                    onfieldaimessage={handleFieldAIMessage}
+                    onaifilled={handleAIFilled}>
+
+                </c-ai-form-filler-chat>
+
                 <!-- AI PROGRESS -->
 
                 <c-ai-progress-indicator
@@ -82,6 +91,8 @@
                         current-page={currentPage}
                         form-data={formData}
                         full-schema={schemaQuestions}
+                        ai-field-messages={aiFieldMessages}
+                        source-breakdown={sourceBreakdownByQuestion}
                         onfieldchange={handleFieldChange}>
 
                     </c-dynamicformpage>
