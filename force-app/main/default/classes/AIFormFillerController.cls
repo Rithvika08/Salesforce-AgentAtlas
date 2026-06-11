@@ -59,6 +59,9 @@ public without sharing class AIFormFillerController {
 
         try {
 
+        Long operationStartMs =
+            DateTime.now().getTime();
+
         /*
          * FINAL RESPONSE
          */
@@ -72,6 +75,12 @@ public without sharing class AIFormFillerController {
 
         Map<String, Object> filledFields =
             new Map<String, Object>();
+
+        Map<String, Object> fieldMessages =
+            new Map<String, Object>();
+
+        List<AIFormFillLogger.Entry> logEntries =
+            new List<AIFormFillLogger.Entry>();
 
         /*
          * QUESTION LIST
@@ -142,35 +151,6 @@ public without sharing class AIFormFillerController {
 
         }
 
-        Map<String, UserDataDiscoveryService.FormQuestion> questionById =
-            new Map<String, UserDataDiscoveryService.FormQuestion>();
-
-        for (
-
-            UserDataDiscoveryService.FormQuestion question
-            : questions
-
-        ) {
-
-            if (
-
-                question != null &&
-
-                !String.isBlank(
-                    question.questionId
-                )
-
-            ) {
-
-                questionById.put(
-                    question.questionId,
-                    question
-                );
-
-            }
-
-        }
-
         /*
          * RUN EINSTEIN PROMPT BUILDER SEMANTIC EXTRACTION FIRST
          */
@@ -237,7 +217,9 @@ public without sharing class AIFormFillerController {
                         existingResult.recommendedValue
                     ) ||
 
-                    existingResult.clearValue == true
+                    existingResult.clearValue == true ||
+
+                    existingResult.noDataFound == true
 
                 );
 
@@ -258,144 +240,11 @@ public without sharing class AIFormFillerController {
 
             else {
 
-                UserDataDiscoveryService.DataDiscoveryResult fallbackResult =
+                applyFallbackMergedSourceMetadata(
+                    existingResult,
                     userDiscoveryResults.get(
                         questionId
-                    );
-
-                if (
-
-                    shouldUseFallbackSourceFields(
-                        existingResult,
-                        fallbackResult
                     )
-
-                ) {
-
-                    existingResult.sourceFields =
-                        new List<String>(
-                            fallbackResult.sourceFields
-                        );
-
-                    if (
-
-                        !String.isBlank(
-                            fallbackResult.reasoning
-                        )
-
-                    ) {
-
-                        existingResult.reasoning =
-                            String.isBlank(
-                                existingResult.reasoning
-                            )
-                                ? fallbackResult.reasoning
-                                : existingResult.reasoning +
-                                    ' | Source fields from fallback synthesis: ' +
-                                    fallbackResult.reasoning;
-
-                    }
-
-                }
-
-            }
-
-        }
-
-        /*
-         * RUN OPENAI SEMANTIC EXTRACTION AS LAST FALLBACK AND COMPARISON
-         */
-
-        Map<String, UserDataDiscoveryService.DataDiscoveryResult>
-            openAiResults =
-                new Map<String, UserDataDiscoveryService.DataDiscoveryResult>();
-
-        try {
-
-            openAiResults =
-                AIQuestionExtractionService.extractAnswers(
-                    UserInfo.getUserId(),
-                    questions
-                );
-
-        }
-
-        catch (Exception e) {
-
-            System.debug(
-                LoggingLevel.WARN,
-                'OpenAI semantic extraction skipped: ' +
-                e.getMessage()
-            );
-
-        }
-
-        for (
-
-            String questionId
-            : openAiResults.keySet()
-
-        ) {
-
-            UserDataDiscoveryService.DataDiscoveryResult existingResult =
-                discoveryResults.get(
-                    questionId
-                );
-
-            UserDataDiscoveryService.FormQuestion question =
-                questionById.get(
-                    questionId
-                );
-
-            UserDataDiscoveryService.DataDiscoveryResult openAiResult =
-                openAiResults.get(
-                    questionId
-                );
-
-            if (
-
-                isEssayQuestion(
-                    question
-                ) &&
-
-                (
-
-                    openAiResult == null ||
-
-                    !isMeaningfulEssayValue(
-                        openAiResult.recommendedValue
-                    )
-
-                )
-
-            ) {
-
-                continue;
-
-            }
-
-            Boolean existingHasValue =
-                existingResult != null &&
-
-                (
-
-                    !String.isBlank(
-                        existingResult.recommendedValue
-                    ) ||
-
-                    existingResult.clearValue == true
-
-                );
-
-            if (
-
-                !existingHasValue
-
-            ) {
-
-                discoveryResults.put(
-                    questionId,
-                    openAiResult
                 );
 
             }
@@ -412,16 +261,35 @@ public without sharing class AIFormFillerController {
 
         Integer confidenceCount = 0;
 
+        Integer unfillableFields = 0;
+
         /*
          * BUILD RESPONSE
          */
 
         for (
 
-            String questionId
-            : discoveryResults.keySet()
+            UserDataDiscoveryService.FormQuestion question
+            : questions
 
         ) {
+
+            if (
+
+                question == null ||
+
+                String.isBlank(
+                    question.questionId
+                )
+
+            ) {
+
+                continue;
+
+            }
+
+            String questionId =
+                question.questionId;
 
             UserDataDiscoveryService.DataDiscoveryResult result =
                 discoveryResults.get(questionId);
@@ -459,11 +327,32 @@ public without sharing class AIFormFillerController {
                         'reasoning' =>
                             result.reasoning,
 
+                        'isMergedAnswer' =>
+                            result.isMergedAnswer,
+
                         'sourceFields' =>
                             result.sourceFields
 
                     }
 
+                );
+
+                AIFormFillLogger.Entry logEntry =
+                    buildFillLogEntry(
+                        question,
+                        result,
+                        determineSelectedSource(
+                            questionId,
+                            result,
+                            einsteinPromptResults,
+                            userDiscoveryResults
+                        ),
+                        'Success',
+                        operationStartMs
+                    );
+
+                logEntries.add(
+                    logEntry
                 );
 
                 if (
@@ -477,6 +366,73 @@ public without sharing class AIFormFillerController {
                         result.bestMatchConfidence;
 
                     confidenceCount++;
+
+                }
+
+            }
+
+            else {
+
+                if (
+
+                    shouldShowNoDataMessage(
+                        question,
+                        result
+                    )
+
+                ) {
+
+                    UserDataDiscoveryService.DataDiscoveryResult
+                        noDataResult =
+                            result == null
+                                ? buildEmptyNoDataResult()
+                                : result;
+
+                    noDataResult.noDataFound =
+                        true;
+
+                    String noDataMessage =
+                        buildNoDataMessage(
+                            question,
+                            noDataResult
+                        );
+
+                    if (
+
+                        !String.isBlank(
+                            noDataMessage
+                        )
+
+                    ) {
+
+                        fieldMessages.put(
+                            questionId,
+                            noDataMessage
+                        );
+
+                        unfillableFields++;
+
+                        AIFormFillLogger.Entry logEntry =
+                            buildNoDataLogEntry(
+                                question,
+                                noDataResult,
+                                noDataMessage,
+                                operationStartMs
+                            );
+
+                        logEntries.add(
+                            logEntry
+                        );
+
+                        System.debug(
+                            LoggingLevel.INFO,
+                            'AI_NO_DATA -> QUESTION: ' +
+                            question.questionText +
+                            ' | MESSAGE: ' +
+                            noDataMessage
+                        );
+
+                    }
 
                 }
 
@@ -502,9 +458,18 @@ public without sharing class AIFormFillerController {
          * FINAL PAYLOAD
          */
 
+        AIFormFillLogger.logAll(
+            logEntries
+        );
+
         response.put(
             'filledFields',
             filledFields
+        );
+
+        response.put(
+            'fieldMessages',
+            fieldMessages
         );
 
         response.put(
@@ -512,7 +477,6 @@ public without sharing class AIFormFillerController {
             buildAiComparisonResults(
                 questions,
                 userDiscoveryResults,
-                openAiResults,
                 einsteinPromptResults,
                 discoveryResults
             )
@@ -525,12 +489,12 @@ public without sharing class AIFormFillerController {
 
         response.put(
             'hasWarnings',
-            false
+            !fieldMessages.isEmpty()
         );
 
         response.put(
             'unfillableFields',
-            0
+            unfillableFields
         );
 
         response.put(
@@ -561,15 +525,610 @@ public without sharing class AIFormFillerController {
 
     }
 
+    @AuraEnabled
+    public static Map<String, Object>
+    fillSingleFieldWithAI(
+
+        String questionId,
+
+        String questionLabel,
+
+        String questionType,
+
+        String picklistValues
+
+    ) {
+
+        try {
+
+            Long operationStartMs =
+                DateTime.now().getTime();
+
+            Map<String, Object> response =
+                new Map<String, Object>();
+
+            Map<String, Object> filledFields =
+                new Map<String, Object>();
+
+            Map<String, Object> fieldMessages =
+                new Map<String, Object>();
+
+            List<UserDataDiscoveryService.FormQuestion> questions =
+                new List<UserDataDiscoveryService.FormQuestion>();
+
+            UserDataDiscoveryService.FormQuestion question =
+                new UserDataDiscoveryService.FormQuestion();
+
+            question.questionId =
+                questionId;
+
+            question.questionText =
+                questionLabel;
+
+            question.questionType =
+                questionType;
+
+            question.picklistValues =
+                picklistValues;
+
+            questions.add(
+                question
+            );
+
+            Map<String, UserDataDiscoveryService.DataDiscoveryResult>
+                einsteinPromptResults =
+                    new Map<String, UserDataDiscoveryService.DataDiscoveryResult>();
+
+            try {
+
+                einsteinPromptResults =
+                    EinsteinPromptExtractionService.extractAnswers(
+                        UserInfo.getUserId(),
+                        questions
+                    );
+
+            }
+
+            catch (Exception e) {
+
+                System.debug(
+                    LoggingLevel.WARN,
+                    'Einstein Prompt Builder single-field extraction skipped: ' +
+                    e.getMessage()
+                );
+
+            }
+
+            Map<String, UserDataDiscoveryService.DataDiscoveryResult>
+                userDiscoveryResults =
+                    UserDataDiscoveryService.discoverDataForForm(
+                        UserInfo.getUserId(),
+                        questions
+                    );
+
+            Map<String, UserDataDiscoveryService.DataDiscoveryResult>
+                discoveryResults =
+                    new Map<String, UserDataDiscoveryService.DataDiscoveryResult>();
+
+            UserDataDiscoveryService.DataDiscoveryResult promptResult =
+                einsteinPromptResults.get(
+                    questionId
+                );
+
+            UserDataDiscoveryService.DataDiscoveryResult fallbackResult =
+                userDiscoveryResults.get(
+                    questionId
+                );
+
+            Boolean promptHasValue =
+                promptResult != null &&
+                (
+                    !String.isBlank(
+                        promptResult.recommendedValue
+                    ) ||
+                    promptResult.clearValue == true ||
+                    promptResult.noDataFound == true
+                );
+
+            if (
+                promptHasValue
+            ) {
+
+                discoveryResults.put(
+                    questionId,
+                    promptResult
+                );
+
+                applyFallbackMergedSourceMetadata(
+                    promptResult,
+                    fallbackResult
+                );
+
+            }
+
+            else if (
+                fallbackResult != null
+            ) {
+
+                discoveryResults.put(
+                    questionId,
+                    fallbackResult
+                );
+
+            }
+
+            applyApplicantKnowledgeChoiceCorrections(
+                discoveryResults,
+                questions,
+                UserInfo.getUserId()
+            );
+
+            UserDataDiscoveryService.DataDiscoveryResult result =
+                discoveryResults.get(
+                    questionId
+                );
+
+            Decimal overallConfidence =
+                0;
+
+            Integer unfillableFields =
+                0;
+
+            if (
+
+                result != null &&
+                (
+                    !String.isBlank(
+                        result.recommendedValue
+                    ) ||
+                    result.clearValue == true
+                )
+
+            ) {
+
+                filledFields.put(
+                    questionId,
+                    buildFieldPayload(
+                        result
+                    )
+                );
+
+                if (
+                    result.bestMatchConfidence != null
+                ) {
+
+                    overallConfidence =
+                        result.bestMatchConfidence;
+
+                }
+
+            }
+
+            else if (
+                shouldShowNoDataMessage(
+                    question,
+                    result
+                )
+            ) {
+
+                UserDataDiscoveryService.DataDiscoveryResult noDataResult =
+                    result == null
+                        ? buildEmptyNoDataResult()
+                        : result;
+
+                noDataResult.noDataFound =
+                    true;
+
+                String noDataMessage =
+                    buildNoDataMessage(
+                        question,
+                        noDataResult
+                    );
+
+                if (
+                    !String.isBlank(
+                        noDataMessage
+                    )
+                ) {
+
+                    fieldMessages.put(
+                        questionId,
+                        noDataMessage
+                    );
+
+                    unfillableFields =
+                        1;
+
+                    System.debug(
+                        LoggingLevel.INFO,
+                        'AI_NO_DATA_SINGLE -> QUESTION: ' +
+                        question.questionText +
+                        ' | MESSAGE: ' +
+                        noDataMessage +
+                        ' | DURATION_MS: ' +
+                        elapsedMs(
+                            operationStartMs
+                        )
+                    );
+
+                }
+
+            }
+
+            response.put(
+                'filledFields',
+                filledFields
+            );
+
+            response.put(
+                'fieldMessages',
+                fieldMessages
+            );
+
+            response.put(
+                'aiComparisonResults',
+                buildAiComparisonResults(
+                    questions,
+                    userDiscoveryResults,
+                    einsteinPromptResults,
+                    discoveryResults
+                )
+            );
+
+            response.put(
+                'overallConfidence',
+                overallConfidence
+            );
+
+            response.put(
+                'hasWarnings',
+                !fieldMessages.isEmpty()
+            );
+
+            response.put(
+                'unfillableFields',
+                unfillableFields
+            );
+
+            response.put(
+                'clarificationsNeeded',
+                0
+            );
+
+            return response;
+
+        }
+
+        catch (Exception e) {
+
+            System.debug(
+                LoggingLevel.ERROR,
+                'AIFormFillerController.fillSingleFieldWithAI failed: ' +
+                e.getMessage() +
+                '\n' +
+                e.getStackTraceString()
+            );
+
+            throw new AuraHandledException(
+                'AI single field fill failed: ' +
+                e.getMessage()
+            );
+
+        }
+
+    }
+
+    private static Map<String, Object> buildFieldPayload(
+
+        UserDataDiscoveryService.DataDiscoveryResult result
+
+    ) {
+
+        if (
+            result == null
+        ) {
+
+            return new Map<String, Object>{
+                'value' => null,
+                'confidence' => null,
+                'reasoning' => null,
+                'isMergedAnswer' => false,
+                'sourceFields' => new List<String>(),
+                'noDataFound' => false,
+                'noDataMessage' => null
+            };
+
+        }
+
+        return new Map<String, Object>{
+            'value' =>
+                result.clearValue == true
+                    ? ''
+                    : result.recommendedValue,
+            'confidence' =>
+                result.bestMatchConfidence,
+            'reasoning' =>
+                result.reasoning,
+            'isMergedAnswer' =>
+                result.isMergedAnswer,
+            'sourceFields' =>
+                result.sourceFields == null
+                    ? new List<String>()
+                    : result.sourceFields,
+            'noDataFound' =>
+                result.noDataFound,
+            'noDataMessage' =>
+                result.noDataMessage
+        };
+
+    }
+
+    private static AIFormFillLogger.Entry buildFillLogEntry(
+
+        UserDataDiscoveryService.FormQuestion question,
+
+        UserDataDiscoveryService.DataDiscoveryResult result,
+
+        String selectedSource,
+
+        String status,
+
+        Long operationStartMs
+
+    ) {
+
+        AIFormFillLogger.Entry entry =
+            new AIFormFillLogger.Entry();
+
+        entry.action =
+            'fill';
+
+        entry.status =
+            status;
+
+        entry.questionId =
+            question == null
+                ? null
+                : question.questionId;
+
+        entry.questionLabel =
+            question == null
+                ? null
+                : question.questionText;
+
+        entry.source =
+            selectedSource;
+
+        entry.confidence =
+            result == null
+                ? null
+                : result.bestMatchConfidence;
+
+        entry.reason =
+            result == null
+                ? null
+                : buildLogReason(
+                    result.reasoning,
+                    result.sourceFields
+                );
+
+        entry.value =
+            result == null ||
+            result.clearValue == true
+                ? ''
+                : result.recommendedValue;
+
+        entry.durationMs =
+            elapsedMs(
+                operationStartMs
+            );
+
+        return entry;
+
+    }
+
+    private static AIFormFillLogger.Entry buildNoDataLogEntry(
+
+        UserDataDiscoveryService.FormQuestion question,
+
+        UserDataDiscoveryService.DataDiscoveryResult result,
+
+        String noDataMessage,
+
+        Long operationStartMs
+
+    ) {
+
+        AIFormFillLogger.Entry entry =
+            new AIFormFillLogger.Entry();
+
+        entry.action =
+            'no_data';
+
+        entry.status =
+            'No Data';
+
+        entry.questionId =
+            question == null
+                ? null
+                : question.questionId;
+
+        entry.questionLabel =
+            question == null
+                ? null
+                : question.questionText;
+
+        entry.source =
+            result == null ||
+            result.sourceFields == null ||
+            result.sourceFields.isEmpty()
+                ? 'No source'
+                : String.join(
+                    result.sourceFields,
+                    ', '
+                );
+
+        entry.confidence =
+            result == null
+                ? null
+                : result.bestMatchConfidence;
+
+        entry.reason =
+            String.isBlank(noDataMessage)
+                ? 'No matching saved data was found.'
+                : noDataMessage;
+
+        entry.value =
+            null;
+
+        entry.durationMs =
+            elapsedMs(
+                operationStartMs
+            );
+
+        return entry;
+
+    }
+
+    private static String determineSelectedSource(
+
+        String questionId,
+
+        UserDataDiscoveryService.DataDiscoveryResult selectedResult,
+
+        Map<String, UserDataDiscoveryService.DataDiscoveryResult>
+            einsteinPromptResults,
+
+        Map<String, UserDataDiscoveryService.DataDiscoveryResult>
+            userDiscoveryResults
+
+    ) {
+
+        UserDataDiscoveryService.DataDiscoveryResult promptResult =
+            einsteinPromptResults == null
+                ? null
+                : einsteinPromptResults.get(questionId);
+
+        if (
+            hasSameSelectedValue(
+                selectedResult,
+                promptResult
+            )
+        ) {
+            return 'Prompt Builder';
+        }
+
+        UserDataDiscoveryService.DataDiscoveryResult fallbackResult =
+            userDiscoveryResults == null
+                ? null
+                : userDiscoveryResults.get(questionId);
+
+        if (
+            hasSameSelectedValue(
+                selectedResult,
+                fallbackResult
+            )
+        ) {
+            return 'UserDataDiscoveryService';
+        }
+
+        return 'AIFormFillerController';
+
+    }
+
+    private static Boolean hasSameSelectedValue(
+
+        UserDataDiscoveryService.DataDiscoveryResult selectedResult,
+
+        UserDataDiscoveryService.DataDiscoveryResult candidateResult
+
+    ) {
+
+        if (
+            selectedResult == null ||
+            candidateResult == null
+        ) {
+            return false;
+        }
+
+        String selectedValue =
+            selectedResult.clearValue == true
+                ? ''
+                : selectedResult.recommendedValue;
+
+        String candidateValue =
+            candidateResult.clearValue == true
+                ? ''
+                : candidateResult.recommendedValue;
+
+        return selectedValue == candidateValue;
+
+    }
+
+    private static String buildLogReason(
+
+        String reasoning,
+
+        List<String> sourceFields
+
+    ) {
+
+        List<String> parts =
+            new List<String>();
+
+        if (
+            !String.isBlank(reasoning)
+        ) {
+            parts.add(
+                reasoning
+            );
+        }
+
+        if (
+            sourceFields != null &&
+            !sourceFields.isEmpty()
+        ) {
+            parts.add(
+                'Source fields: ' +
+                String.join(
+                    sourceFields,
+                    ', '
+                )
+            );
+        }
+
+        return parts.isEmpty()
+            ? null
+            : String.join(
+                parts,
+                '\n'
+            );
+
+    }
+
+    private static Long elapsedMs(
+
+        Long operationStartMs
+
+    ) {
+
+        if (
+            operationStartMs == null
+        ) {
+            return null;
+        }
+
+        return DateTime.now().getTime() -
+            operationStartMs;
+
+    }
+
     private static Map<String, Object> buildAiComparisonResults(
 
         List<UserDataDiscoveryService.FormQuestion> questions,
 
         Map<String, UserDataDiscoveryService.DataDiscoveryResult>
             userDiscoveryResults,
-
-        Map<String, UserDataDiscoveryService.DataDiscoveryResult>
-            openAiResults,
 
         Map<String, UserDataDiscoveryService.DataDiscoveryResult>
             einsteinPromptResults,
@@ -616,12 +1175,6 @@ public without sharing class AIFormFillerController {
                                 questionId
                             )
                         ),
-                    'openAI' =>
-                        summarizeProviderResult(
-                            openAiResults.get(
-                                questionId
-                            )
-                        ),
                     'einsteinPromptBuilder' =>
                         summarizeProviderResult(
                             einsteinPromptResults.get(
@@ -648,12 +1201,6 @@ public without sharing class AIFormFillerController {
                 ' | USERDISCOVERY: ' +
                 summarizeValue(
                     userDiscoveryResults.get(
-                        questionId
-                    )
-                ) +
-                ' | OPENAI: ' +
-                summarizeValue(
-                    openAiResults.get(
                         questionId
                     )
                 ) +
@@ -693,7 +1240,10 @@ public without sharing class AIFormFillerController {
                 'value' => null,
                 'confidence' => null,
                 'reasoning' => null,
-                'sourceFields' => new List<String>()
+                'isMergedAnswer' => false,
+                'sourceFields' => new List<String>(),
+                'noDataFound' => false,
+                'noDataMessage' => null
             };
 
         }
@@ -707,11 +1257,285 @@ public without sharing class AIFormFillerController {
                 result.bestMatchConfidence,
             'reasoning' =>
                 result.reasoning,
+            'isMergedAnswer' =>
+                result.isMergedAnswer,
             'sourceFields' =>
                 result.sourceFields == null
                     ? new List<String>()
-                    : result.sourceFields
+                    : result.sourceFields,
+            'noDataFound' =>
+                result.noDataFound,
+            'noDataMessage' =>
+                result.noDataMessage
         };
+
+    }
+
+    private static String buildNoDataMessage(
+
+        UserDataDiscoveryService.FormQuestion question,
+
+        UserDataDiscoveryService.DataDiscoveryResult result
+
+    ) {
+
+        if (
+
+            result != null &&
+            result.noDataFound == true &&
+            !String.isBlank(
+                result.noDataMessage
+            )
+
+        ) {
+
+            return result.noDataMessage;
+
+        }
+
+        String label =
+            question == null ||
+            String.isBlank(
+                question.questionText
+            )
+                ? 'this field'
+                : question.questionText;
+
+        String sourceLocation =
+            suggestMissingDataLocation(
+                question
+            );
+
+        return 'No saved data found for ' +
+            label +
+            '. Please enter it manually. You can add it under ' +
+            sourceLocation +
+            ' in Salesforce for future use.';
+
+    }
+
+    private static Boolean shouldShowNoDataMessage(
+
+        UserDataDiscoveryService.FormQuestion question,
+
+        UserDataDiscoveryService.DataDiscoveryResult result
+
+    ) {
+
+        if (
+
+            question == null ||
+            isCheckboxQuestion(
+                question
+            )
+
+        ) {
+
+            return false;
+
+        }
+
+        return result == null ||
+            result.noDataFound == true;
+
+    }
+
+    private static Boolean isCheckboxQuestion(
+
+        UserDataDiscoveryService.FormQuestion question
+
+    ) {
+
+        String questionType =
+            normalize(
+                question == null
+                    ? ''
+                    : question.questionType
+            );
+
+        return questionType.contains(
+            'checkbox'
+        ) ||
+            questionType.contains(
+                'check box'
+            ) ||
+            questionType == 'boolean';
+
+    }
+
+    private static UserDataDiscoveryService.DataDiscoveryResult
+        buildEmptyNoDataResult() {
+
+        UserDataDiscoveryService.DataDiscoveryResult result =
+            new UserDataDiscoveryService.DataDiscoveryResult();
+
+        result.noDataFound =
+            true;
+
+        result.noDataMessage =
+            null;
+
+        result.bestMatchConfidence =
+            0;
+
+        result.sourceFields =
+            new List<String>();
+
+        return result;
+
+    }
+
+    private static String suggestMissingDataLocation(
+
+        UserDataDiscoveryService.FormQuestion question
+
+    ) {
+
+        String fingerprint =
+            normalize(
+                (question == null ? '' : question.questionText) +
+                ' ' +
+                (question == null ? '' : question.questionType)
+            );
+
+        if (
+
+            fingerprint.contains(
+                'email'
+            ) ||
+            fingerprint.contains(
+                'phone'
+            ) ||
+            fingerprint.contains(
+                'mobile'
+            ) ||
+            fingerprint.contains(
+                'address'
+            ) ||
+            fingerprint.contains(
+                'birth'
+            ) ||
+            fingerprint.contains(
+                'gender'
+            ) ||
+            fingerprint.contains(
+                'citizen'
+            ) ||
+            fingerprint.contains(
+                'contact'
+            )
+
+        ) {
+
+            return 'Contact Info';
+
+        }
+
+        if (
+
+            fingerprint.contains(
+                'name'
+            ) ||
+            fingerprint.contains(
+                'profile'
+            ) ||
+            fingerprint.contains(
+                'user'
+            )
+
+        ) {
+
+            return 'your profile';
+
+        }
+
+        if (
+
+            fingerprint.contains(
+                'program'
+            ) ||
+            fingerprint.contains(
+                'education'
+            ) ||
+            fingerprint.contains(
+                'institution'
+            ) ||
+            fingerprint.contains(
+                'degree'
+            ) ||
+            fingerprint.contains(
+                'term'
+            )
+
+        ) {
+
+            return 'the related application or education record';
+
+        }
+
+        return 'Applicant Knowledge or the related Salesforce record';
+
+    }
+
+    private static void applyFallbackMergedSourceMetadata(
+
+        UserDataDiscoveryService.DataDiscoveryResult existingResult,
+
+        UserDataDiscoveryService.DataDiscoveryResult fallbackResult
+
+    ) {
+
+        if (
+
+            existingResult == null ||
+            fallbackResult == null ||
+            fallbackResult.isMergedAnswer != true ||
+            fallbackResult.sourceFields == null ||
+            fallbackResult.sourceFields.size() < 2
+
+        ) {
+
+            return;
+
+        }
+
+        if (
+
+            existingResult.sourceFields != null &&
+            existingResult.sourceFields.size() >= 2
+
+        ) {
+
+            return;
+
+        }
+
+        existingResult.isMergedAnswer =
+            true;
+
+        existingResult.sourceFields =
+            new List<String>(
+                fallbackResult.sourceFields
+            );
+
+        if (
+
+            !String.isBlank(
+                fallbackResult.reasoning
+            )
+
+        ) {
+
+            existingResult.reasoning =
+                String.isBlank(
+                    existingResult.reasoning
+                )
+                    ? fallbackResult.reasoning
+                    : existingResult.reasoning +
+                        ' | Merged source metadata from fallback synthesis: ' +
+                        fallbackResult.reasoning;
+
+        }
 
     }
 
@@ -734,124 +1558,6 @@ public without sharing class AIFormFillerController {
         return result.clearValue == true
             ? '[CLEAR]'
             : result.recommendedValue;
-
-    }
-
-    private static Boolean shouldOpenAiReplaceExistingValue(
-
-        UserDataDiscoveryService.FormQuestion question,
-
-        UserDataDiscoveryService.DataDiscoveryResult existingResult,
-
-        UserDataDiscoveryService.DataDiscoveryResult openAiResult
-
-    ) {
-
-        if (
-
-            existingResult == null ||
-
-            openAiResult == null ||
-
-            String.isBlank(
-                openAiResult.recommendedValue
-            )
-
-        ) {
-
-            return false;
-
-        }
-
-        if (
-
-            isEssayQuestion(
-                question
-            )
-
-        ) {
-
-            if (
-
-                isMeaningfulEssayValue(
-                    existingResult.recommendedValue
-                )
-
-            ) {
-
-                return false;
-
-            }
-
-            if (
-
-                !isMeaningfulEssayValue(
-                    openAiResult.recommendedValue
-                )
-
-            ) {
-
-                return false;
-
-            }
-
-        }
-
-        Decimal openAiConfidence =
-            openAiResult.bestMatchConfidence == null
-                ? 0
-                : openAiResult.bestMatchConfidence;
-
-        if (
-
-            openAiConfidence < 0.85
-
-        ) {
-
-            return false;
-
-        }
-
-        Decimal existingConfidence =
-            existingResult.bestMatchConfidence == null
-                ? 0
-                : existingResult.bestMatchConfidence;
-
-        String existingReasoning =
-            String.isBlank(
-                existingResult.reasoning
-            )
-                ? ''
-                : existingResult.reasoning.toLowerCase();
-
-        if (
-
-            existingReasoning.contains(
-                'synthesized'
-            ) ||
-
-            existingReasoning.contains(
-                'synthesis'
-            )
-
-        ) {
-
-            return false;
-
-        }
-
-        Boolean existingIsFallback =
-            existingReasoning.contains(
-                'generic'
-            ) ||
-
-            existingReasoning.contains(
-                'semantic match'
-            );
-
-        return existingIsFallback ||
-
-        existingConfidence < 0.9;
 
     }
 
@@ -1143,6 +1849,98 @@ public without sharing class AIFormFillerController {
 
         }
 
+        String normalizedQuestionLabel =
+            normalize(
+                question.questionText
+            );
+
+        if (
+
+            normalizedQuestionLabel.contains(
+                'financing'
+            ) ||
+
+            normalizedQuestionLabel.contains(
+                'funding'
+            ) ||
+
+            normalizedQuestionLabel.contains(
+                'tuition'
+            )
+
+        ) {
+
+            return matchOptionFromList(
+                extractFinancingChoiceFromKnowledge(
+                    knowledge
+                ),
+                options
+            );
+
+        }
+
+        if (
+
+            normalizedQuestionLabel.contains(
+                'enrollment'
+            ) ||
+
+            normalizedQuestionLabel.contains(
+                'student status'
+            ) ||
+
+            normalizedQuestionLabel.contains(
+                'study load'
+            )
+
+        ) {
+
+            return matchOptionFromList(
+                extractEnrollmentChoiceFromKnowledge(
+                    knowledge
+                ),
+                options
+            );
+
+        }
+
+        if (
+
+            normalizedQuestionLabel.contains(
+                'currently employed'
+            ) ||
+
+            normalizedQuestionLabel.contains(
+                'employment status'
+            ) ||
+
+            normalizedQuestionLabel.contains(
+                'working now'
+            )
+
+        ) {
+
+            return matchOptionFromList(
+                extractEmploymentChoiceFromKnowledge(
+                    knowledge
+                ),
+                options
+            );
+
+        }
+
+        if (
+
+            !isAcademicChoiceLabel(
+                question.questionText
+            )
+
+        ) {
+
+            return null;
+
+        }
+
         List<Pattern> explicitPatterns =
             new List<Pattern>{
                 Pattern.compile(
@@ -1191,6 +1989,174 @@ public without sharing class AIFormFillerController {
 
             }
 
+        }
+
+        return null;
+
+    }
+
+    private static String extractFinancingChoiceFromKnowledge(
+
+        String knowledge
+
+    ) {
+
+        String lower =
+            normalize(
+                knowledge
+            );
+
+        Integer fundingSignals = 0;
+
+        if (
+            lower.contains('personal fund') ||
+            lower.contains('self fund') ||
+            lower.contains('saving')
+        ) {
+            fundingSignals++;
+        }
+
+        if (
+            lower.contains('family support') ||
+            lower.contains('parent')
+        ) {
+            fundingSignals++;
+        }
+
+        if (
+            lower.contains('scholarship') ||
+            lower.contains('fellowship')
+        ) {
+            fundingSignals++;
+        }
+
+        if (
+            lower.contains('student loan') ||
+            lower.contains('education loan') ||
+            lower.contains('loan')
+        ) {
+            fundingSignals++;
+        }
+
+        if (
+            lower.contains('employer sponsorship') ||
+            lower.contains('employer sponsor') ||
+            lower.contains('company sponsorship')
+        ) {
+            fundingSignals++;
+        }
+
+        if (
+            lower.contains('combination') ||
+            lower.contains('combined') ||
+            fundingSignals > 1
+        ) {
+            return 'Combination';
+        }
+
+        if (lower.contains('employer')) {
+            return 'Employer Sponsorship';
+        }
+
+        if (lower.contains('scholarship') || lower.contains('fellowship')) {
+            return 'Scholarship';
+        }
+
+        if (lower.contains('loan')) {
+            return 'Student Loan';
+        }
+
+        if (lower.contains('family') || lower.contains('parent')) {
+            return 'Family Support';
+        }
+
+        if (
+            lower.contains('personal fund') ||
+            lower.contains('self fund') ||
+            lower.contains('saving')
+        ) {
+            return 'Personal Funds';
+        }
+
+        return null;
+
+    }
+
+    private static String extractEnrollmentChoiceFromKnowledge(
+
+        String knowledge
+
+    ) {
+
+        String lower =
+            normalize(
+                knowledge
+            );
+
+        if (
+            lower.contains('part time') ||
+            lower.contains('part-time')
+        ) {
+            return 'Part-time';
+        }
+
+        if (
+            lower.contains('full time') ||
+            lower.contains('full-time')
+        ) {
+            return 'Full-time';
+        }
+
+        return null;
+
+    }
+
+    private static String extractEmploymentChoiceFromKnowledge(
+
+        String knowledge
+
+    ) {
+
+        String lower =
+            normalize(
+                knowledge
+            );
+
+        if (
+            lower.contains('currently employed full time') ||
+            lower.contains('currently employed fulltime') ||
+            lower.contains('employed full time') ||
+            lower.contains('employed fulltime') ||
+            lower.contains('working full time') ||
+            lower.contains('working fulltime')
+        ) {
+            return 'Yes - Full time';
+        }
+
+        if (
+            lower.contains('currently employed part time') ||
+            lower.contains('currently employed parttime') ||
+            lower.contains('employed part time') ||
+            lower.contains('employed parttime') ||
+            lower.contains('working part time') ||
+            lower.contains('working parttime')
+        ) {
+            return 'Yes - Part time';
+        }
+
+        if (
+            lower.contains('not employed') ||
+            lower.contains('unemployed') ||
+            lower.contains('not currently working')
+        ) {
+            return 'No';
+        }
+
+        if (
+            lower.contains('currently employed') ||
+            lower.contains('working')
+        ) {
+            return 'Yes - Full time';
         }
 
         return null;
@@ -1246,6 +2212,50 @@ public without sharing class AIFormFillerController {
 
         normalizedLabel.contains(
             'discipline'
+        ) ||
+
+        normalizedLabel.contains(
+            'financing'
+        ) ||
+
+        normalizedLabel.contains(
+            'funding'
+        ) ||
+
+        normalizedLabel.contains(
+            'financial plan'
+        ) ||
+
+        normalizedLabel.contains(
+            'tuition'
+        ) ||
+
+        normalizedLabel.contains(
+            'enrollment'
+        ) ||
+
+        normalizedLabel.contains(
+            'student status'
+        ) ||
+
+        normalizedLabel.contains(
+            'study load'
+        ) ||
+
+        normalizedLabel.contains(
+            'currently employed'
+        ) ||
+
+        normalizedLabel.contains(
+            'employment status'
+        ) ||
+
+        normalizedLabel.contains(
+            'working now'
+        ) ||
+
+        normalizedLabel.contains(
+            'current job'
         );
 
     }
@@ -1423,151 +2433,6 @@ public without sharing class AIFormFillerController {
                     ' '
                 )
                 .trim();
-
-    }
-
-    private static Boolean shouldUseFallbackSourceFields(
-
-        UserDataDiscoveryService.DataDiscoveryResult existingResult,
-
-        UserDataDiscoveryService.DataDiscoveryResult fallbackResult
-
-    ) {
-
-        if (
-
-            existingResult == null ||
-            fallbackResult == null ||
-            fallbackResult.sourceFields == null ||
-            countRealSourceFields(
-                fallbackResult.sourceFields
-            ) < 2
-
-        ) {
-
-            return false;
-
-        }
-
-        return existingResult.sourceFields == null ||
-            countRealSourceFields(
-                existingResult.sourceFields
-            ) < 2;
-
-    }
-
-    private static Integer countRealSourceFields(
-
-        List<String> sourceFields
-
-    ) {
-
-        Integer count =
-            0;
-
-        Set<String> seenSources =
-            new Set<String>();
-
-        if (
-
-            sourceFields == null
-
-        ) {
-
-            return count;
-
-        }
-
-        for (
-
-            String sourceField
-            : sourceFields
-
-        ) {
-
-            String normalizedSource =
-                normalizeSourceField(
-                    sourceField
-                );
-
-            if (
-
-                !String.isBlank(
-                    normalizedSource
-                ) &&
-                !isGenericSourceField(
-                    normalizedSource
-                ) &&
-                !seenSources.contains(
-                    normalizedSource
-                )
-
-            ) {
-
-                seenSources.add(
-                    normalizedSource
-                );
-
-                count++;
-
-            }
-
-        }
-
-        return count;
-
-    }
-
-    private static String normalizeSourceField(
-
-        String sourceField
-
-    ) {
-
-        return String.isBlank(
-            sourceField
-        )
-            ? ''
-            : sourceField
-                .replace(
-                    '[',
-                    ''
-                )
-                .replace(
-                    ']',
-                    ''
-                )
-                .replace(
-                    '"',
-                    ''
-                )
-                .trim()
-                .toLowerCase();
-
-    }
-
-    private static Boolean isGenericSourceField(
-
-        String sourceField
-
-    ) {
-
-        String normalizedSource =
-            normalizeSourceField(
-                sourceField
-            );
-
-        return normalizedSource == 'prompt builder' ||
-            normalizedSource == 'einstein prompt builder' ||
-            normalizedSource == 'applicant knowledge' ||
-            normalizedSource == 'ai' ||
-            normalizedSource == 'chat prompt' ||
-            normalizedSource.contains(
-                'prompt builder'
-            ) ||
-            normalizedSource.contains(
-                'openai semantic extraction'
-            );
 
     }
 

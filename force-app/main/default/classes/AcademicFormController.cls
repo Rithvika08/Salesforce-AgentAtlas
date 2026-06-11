@@ -301,6 +301,8 @@ public without sharing class AcademicFormController {
     
         Map<String, Object> result =
             new Map<String, Object>();
+
+        try {
     
         Form_Submission__c submission;
     
@@ -432,14 +434,22 @@ public without sharing class AcademicFormController {
          */
     
         Map<String, Object> parsedData =
-    
-            (Map<String, Object>)
-            JSON.deserializeUntyped(
+            String.isBlank(
                 formData
-            );
+            )
+                ? new Map<String, Object>()
+                : (Map<String, Object>)
+                    JSON.deserializeUntyped(
+                        formData
+                    );
 
         String confidenceFieldApiName =
             getFormResponseConfidenceFieldApiName();
+
+        Integer responseValueMaxLength =
+            getFieldLength(
+                Form_Response__c.Response_Value__c
+            );
     
         /*
          * UPSERT LISTS
@@ -452,7 +462,7 @@ public without sharing class AcademicFormController {
         List<Form_Response__c>
             responsesToUpdate =
                 new List<Form_Response__c>();
-    
+
         /*
          * PROCESS RESPONSES
          */
@@ -464,14 +474,68 @@ public without sharing class AcademicFormController {
     
         ) {
     
-            Map<String, Object> valueObj =
-    
-                (Map<String, Object>)
+            Object rawValueObj =
                 parsedData.get(key);
+
+            if (
+                !(rawValueObj instanceof Map<String, Object>)
+            ) {
+
+                continue;
+
+            }
+
+            Map<String, Object> valueObj =
+
+                (Map<String, Object>)
+                rawValueObj;
     
             String responseValue =
-                String.valueOf(
-                    valueObj.get('value')
+                valueObj != null &&
+                valueObj.containsKey('value') &&
+                valueObj.get('value') != null
+                    ? String.valueOf(
+                        valueObj.get('value')
+                    )
+                    : null;
+
+            if (
+                String.isBlank(
+                    responseValue
+                )
+            ) {
+
+                if (
+
+                    existingResponses.containsKey(
+                        key
+                    )
+
+                ) {
+
+                    Form_Response__c existingBlankResponse =
+
+                        existingResponses.get(
+                            key
+                        );
+
+                    existingBlankResponse.Response_Value__c =
+                        '';
+
+                    responsesToUpdate.add(
+                        existingBlankResponse
+                    );
+
+                }
+
+                continue;
+
+            }
+
+            responseValue =
+                truncateToFieldLength(
+                    responseValue,
+                    responseValueMaxLength
                 );
 
             Decimal confidence =
@@ -559,17 +623,25 @@ public without sharing class AcademicFormController {
     
         if (!responsesToUpdate.isEmpty()) {
     
-            update responsesToUpdate;
+            saveResponsesWithoutBlockingDraft(
+                responsesToUpdate,
+                result,
+                'updated'
+            );
     
         }
-    
+
         /*
          * SAVE INSERTSss
          */
     
         if (!responsesToInsert.isEmpty()) {
     
-            insert responsesToInsert;
+            saveResponsesWithoutBlockingDraft(
+                responsesToInsert,
+                result,
+                'inserted'
+            );
     
         }
     
@@ -581,9 +653,201 @@ public without sharing class AcademicFormController {
             'submissionId',
             submission.Id
         );
+
+        result.put(
+            'success',
+            true
+        );
     
         return result;
+
+        } catch (Exception e) {
+
+            result.put(
+                'success',
+                false
+            );
+
+            result.put(
+                'errorMessage',
+                e.getTypeName() +
+                ': ' +
+                e.getMessage()
+            );
+
+            return result;
+
+        }
     
+    }
+
+    private static Integer getFieldLength(
+
+        Schema.SObjectField fieldToken
+
+    ) {
+
+        if (
+            fieldToken == null
+        ) {
+
+            return 0;
+
+        }
+
+        try {
+
+            return fieldToken
+                .getDescribe()
+                .getLength();
+
+        } catch (Exception e) {
+
+            return 0;
+
+        }
+
+    }
+
+    private static String truncateToFieldLength(
+
+        String value,
+
+        Integer maxLength
+
+    ) {
+
+        if (
+            String.isBlank(
+                value
+            ) ||
+            maxLength == null ||
+            maxLength <= 0 ||
+            value.length() <= maxLength
+        ) {
+
+            return value;
+
+        }
+
+        return value.substring(
+            0,
+            maxLength
+        );
+
+    }
+
+    private static void saveResponsesWithoutBlockingDraft(
+
+        List<Form_Response__c> responses,
+
+        Map<String, Object> result,
+
+        String operation
+
+    ) {
+
+        if (
+            responses == null ||
+            responses.isEmpty()
+        ) {
+
+            return;
+
+        }
+
+        Database.SaveResult[] saveResults;
+
+        if (
+            operation == 'inserted'
+        ) {
+
+            saveResults =
+                Database.insert(
+                    responses,
+                    false
+                );
+
+        } else {
+
+            saveResults =
+                Database.update(
+                    responses,
+                    false
+                );
+
+        }
+
+        List<String> errors =
+            (List<String>) result.get(
+                'responseSaveErrors'
+            );
+
+        if (
+            errors == null
+        ) {
+
+            errors =
+                new List<String>();
+
+        }
+
+        Integer savedCount = 0;
+
+        for (
+            Integer index = 0;
+            index < saveResults.size();
+            index++
+        ) {
+
+            Database.SaveResult saveResult =
+                saveResults[index];
+
+            if (
+                saveResult.isSuccess()
+            ) {
+
+                savedCount++;
+                continue;
+
+            }
+
+            Form_Response__c response =
+                responses[index];
+
+            for (
+                Database.Error error :
+                saveResult.getErrors()
+            ) {
+
+                errors.add(
+                    String.valueOf(
+                        response.Question_Id__c
+                    ) +
+                    ': ' +
+                    error.getMessage()
+                );
+
+            }
+
+        }
+
+        result.put(
+            operation + 'ResponseCount',
+            savedCount
+        );
+
+        if (
+            !errors.isEmpty()
+        ) {
+
+            result.put(
+                'responseSaveErrors',
+                errors
+            );
+
+        }
+
     }
 
     private static Map<Id, Object> getSavedResponseConfidenceById(
@@ -877,6 +1141,19 @@ public without sharing class AcademicFormController {
 
             numericValueToStore =
                 numericValueToStore * 100;
+
+        }
+
+        if (
+            fieldDescribe.getType() ==
+            Schema.DisplayType.Percent &&
+            fieldDescribe.getScale() == 0
+        ) {
+
+            numericValueToStore =
+                numericValueToStore.setScale(
+                    0
+                );
 
         }
 

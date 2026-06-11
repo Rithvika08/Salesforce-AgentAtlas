@@ -38,7 +38,16 @@ public with sharing class UserDataDiscoveryService {
             new List<String>();
 
         @AuraEnabled
+        public Boolean isMergedAnswer = false;
+
+        @AuraEnabled
         public Boolean clearValue = false;
+
+        @AuraEnabled
+        public Boolean noDataFound = false;
+
+        @AuraEnabled
+        public String noDataMessage;
 
     }
 
@@ -50,6 +59,8 @@ public with sharing class UserDataDiscoveryService {
 
         public List<String> sourceFields =
             new List<String>();
+
+        public Boolean isMergedAnswer = false;
 
         public SemanticAnswer(
 
@@ -94,6 +105,15 @@ public with sharing class UserDataDiscoveryService {
                 );
 
             }
+
+        }
+
+        public SemanticAnswer markAsMerged() {
+
+            this.isMergedAnswer =
+                true;
+
+            return this;
 
         }
 
@@ -286,6 +306,9 @@ public with sharing class UserDataDiscoveryService {
 
                 res.reasoning =
                     semanticAnswer.reasoning;
+
+                res.isMergedAnswer =
+                    semanticAnswer.isMergedAnswer;
 
                 if (
 
@@ -6996,7 +7019,8 @@ public with sharing class UserDataDiscoveryService {
             value,
             reasoning,
             sourceFields
-        );
+        )
+            .markAsMerged();
 
     }
 

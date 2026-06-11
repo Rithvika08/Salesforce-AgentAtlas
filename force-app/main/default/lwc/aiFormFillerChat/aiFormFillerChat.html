@@ -34,6 +34,31 @@
 
                     </span>
 
+                    <template if:true={message.hasOptions}>
+
+                        <div class="clarification-options">
+
+                            <template
+                                for:each={message.options}
+                                for:item="option">
+
+                                <button
+                                    key={option.id}
+                                    class="clarification-option"
+                                    data-option-id={option.id}
+                                    onclick={handleClarificationOption}
+                                    type="button">
+
+                                    {option.label}
+
+                                </button>
+
+                            </template>
+
+                        </div>
+
+                    </template>
+
                 </div>
 
             </template>

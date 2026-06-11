@@ -151,6 +151,13 @@ export default class Dynamicformpage extends LightningElement {
                         : ''
                 ,
 
+                aiConfidence:
+
+                    this.formData[
+                        field.id ||
+                        field.Question_Id__c
+                    ]?.confidence,
+
                 sourceFieldsText:
 
                     this.sanitizeSourceFieldsText(
@@ -159,6 +166,13 @@ export default class Dynamicformpage extends LightningElement {
                             field.Question_Id__c
                         ]?.sourcesText || ''
                     ),
+
+                isMergedAnswer:
+
+                    this.sourceBreakdown[
+                        field.id ||
+                        field.Question_Id__c
+                    ]?.isMergedAnswer === true,
 
                 aiMessage:
 

@@ -2,6 +2,15 @@
 
     <div class="slds-form-element">
 
+        <template if:true={hasAIConfidence}>
+
+            <span
+                class="ai-confidence-indicator"
+                title={confidenceTooltip}
+                aria-label={confidenceTooltip}>i</span>
+
+        </template>
+
         <!-- PICKLIST -->
 
         <template if:true={isPicklist}>

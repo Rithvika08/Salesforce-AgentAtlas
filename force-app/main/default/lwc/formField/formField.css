@@ -34,6 +34,10 @@ lightning-helptext {
 
     margin-bottom: 1.5rem;
 
+    position: relative;
+
+    padding-right: 1.25rem;
+
 }
 
 .source-fields-used {
@@ -45,6 +49,42 @@ lightning-helptext {
     font-size: 0.75rem;
 
     line-height: 1.25;
+
+}
+
+.ai-confidence-indicator {
+
+    align-items: center;
+
+    background: #706e6b;
+
+    border-radius: 50%;
+
+    color: #fff;
+
+    cursor: help;
+
+    display: inline-flex;
+
+    font-size: 0.55rem;
+
+    font-weight: 700;
+
+    height: 0.85rem;
+
+    justify-content: center;
+
+    line-height: 1;
+
+    position: absolute;
+
+    right: 0;
+
+    top: 1.9rem;
+
+    width: 0.85rem;
+
+    z-index: 1;
 
 }
 

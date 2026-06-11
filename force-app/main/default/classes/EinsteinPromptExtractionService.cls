@@ -35,39 +35,372 @@ public without sharing class EinsteinPromptExtractionService {
                 userId
             );
 
-        String promptResponse =
-            invokePromptTemplate(
-                'fill all fields',
-                JSON.serialize(
-                    buildFieldContext(
-                        questions
-                    )
-                ),
-                '{}',
-                JSON.serialize(
-                    buildSourceData(
-                        context
-                    )
+        String sourceDataJson =
+            JSON.serialize(
+                buildSourceData(
+                    context
                 )
             );
 
-        if (
+        fillMissingFieldsWithSinglePromptBuilderPass(
+            results,
+            questions,
+            sourceDataJson
+        );
 
-            String.isBlank(
-                promptResponse
-            )
+        return results;
 
-        ) {
+    }
 
-            return results;
+    private static void fillMissingFieldsWithSinglePromptBuilderPass(
+
+        Map<String, UserDataDiscoveryService.DataDiscoveryResult> results,
+
+        List<UserDataDiscoveryService.FormQuestion> questions,
+
+        String sourceDataJson
+
+    ) {
+
+        try {
+
+            String promptResponse =
+                invokePromptTemplate(
+                    'fill all available form fields',
+                    JSON.serialize(
+                        buildFieldContext(
+                            questions
+                        )
+                    ),
+                    '{}',
+                    sourceDataJson
+                );
+
+            Map<String, UserDataDiscoveryService.DataDiscoveryResult>
+                promptResults =
+                    parseResults(
+                        promptResponse,
+                        questions,
+                        null
+                    );
+
+            for (
+
+                String questionId
+                : promptResults.keySet()
+
+            ) {
+
+                if (
+
+                    !hasUsableResult(
+                        results.get(
+                            questionId
+                        )
+                    )
+
+                ) {
+
+                    results.put(
+                        questionId,
+                        promptResults.get(
+                            questionId
+                        )
+                    );
+
+                }
+
+            }
+
+        } catch (Exception e) {
+
+            System.debug(
+                LoggingLevel.WARN,
+                'Bulk Prompt Builder fill skipped: ' +
+                e.getMessage()
+            );
 
         }
 
-        return parseResults(
-            promptResponse,
-            questions,
-            context
-        );
+    }
+
+    private static Boolean hasUsableResult(
+
+        UserDataDiscoveryService.DataDiscoveryResult result
+
+    ) {
+
+        return result != null &&
+            (
+                !String.isBlank(
+                    result.recommendedValue
+                ) ||
+                result.clearValue == true
+            );
+
+    }
+
+    private static UserDataDiscoveryService.DataDiscoveryResult extractSingleAnswer(
+
+        UserDataDiscoveryService.FormQuestion question,
+
+        String sourceDataJson
+
+    ) {
+
+        try {
+
+            String promptResponse =
+                invokePromptTemplate(
+                    'fill ' + question.questionText,
+                    JSON.serialize(
+                        buildFieldContext(
+                            new List<UserDataDiscoveryService.FormQuestion>{
+                                question
+                            }
+                        )
+                    ),
+                    '{}',
+                    sourceDataJson
+                );
+
+            if (
+
+                String.isBlank(
+                    promptResponse
+                )
+
+            ) {
+
+                return null;
+
+            }
+
+            Map<String, Object> parsed =
+                parseJsonObject(
+                    promptResponse
+                );
+
+            if (
+
+                parsed == null ||
+                parsed.isEmpty()
+
+            ) {
+
+                return null;
+
+            }
+
+            normalizeParsedCommand(
+                parsed
+            );
+
+            String action =
+                firstStringValue(
+                    parsed,
+                    new List<String>{
+                        'action',
+                        'type',
+                        'command'
+                    }
+                );
+
+            if (
+
+                !String.isBlank(
+                    action
+                )
+
+            ) {
+
+                String normalizedAction =
+                    action.toLowerCase().trim();
+
+                if (
+
+                    normalizedAction != 'fill' &&
+                    normalizedAction != 'fill_field' &&
+                    normalizedAction != 'autofill' &&
+                    normalizedAction != 'no_data_found' &&
+                    normalizedAction != 'no data found' &&
+                    normalizedAction != 'missing_data' &&
+                    normalizedAction != 'missing data' &&
+                    normalizedAction != 'not_found' &&
+                    normalizedAction != 'not found' &&
+                    normalizedAction != 'unfillable'
+
+                ) {
+
+                    return null;
+
+                }
+
+            }
+
+            String value =
+                firstStringValue(
+                    parsed,
+                    new List<String>{
+                        'value',
+                        'newValue',
+                        'answer',
+                        'recommendedValue',
+                        'fieldValue',
+                        'extractedValue',
+                        'selectedValue',
+                        'outputValue',
+                        'replacementValue'
+                    }
+                );
+
+            Boolean noDataFound =
+                isNoDataResponse(
+                    parsed,
+                    value
+                );
+
+            if (
+
+                noDataFound
+
+            ) {
+
+                UserDataDiscoveryService.DataDiscoveryResult result =
+                    new UserDataDiscoveryService.DataDiscoveryResult();
+
+                result.questionId =
+                    question.questionId;
+
+                result.bestMatchConfidence =
+                    toDecimal(
+                        parsed.get(
+                            'confidence'
+                        ),
+                        0
+                    );
+
+                result.noDataFound =
+                    true;
+
+                result.noDataMessage =
+                    firstStringValue(
+                        parsed,
+                        new List<String>{
+                            'noDataMessage',
+                            'message',
+                            'userMessage',
+                            'clarificationQuestion',
+                            'reasoning',
+                            'reason'
+                        }
+                    );
+
+                result.reasoning =
+                    'Einstein Prompt Builder no-data response: ' +
+                    firstStringValue(
+                        parsed,
+                        new List<String>{
+                            'reasoning',
+                            'reason'
+                        }
+                    );
+
+                return result;
+
+            }
+
+            String validatedValue =
+                validateValue(
+                    question,
+                    value
+                );
+
+            if (
+
+                String.isBlank(
+                    validatedValue
+                )
+
+            ) {
+
+                return null;
+
+            }
+
+            List<String> sourceFields =
+                parseSourceFields(
+                    parsed.get(
+                        'sourceFields'
+                    )
+                );
+
+            if (
+
+                sourceFields.isEmpty()
+
+            ) {
+
+                return buildNoDataResult(
+                    question.questionId,
+                    parsed,
+                    'Prompt Builder returned a value without source fields, so the answer was not used.'
+                );
+
+            }
+
+            UserDataDiscoveryService.DataDiscoveryResult result =
+                new UserDataDiscoveryService.DataDiscoveryResult();
+
+            result.questionId =
+                question.questionId;
+
+            result.recommendedValue =
+                validatedValue;
+
+            result.bestMatchConfidence =
+                toDecimal(
+                    parsed.get(
+                        'confidence'
+                    ),
+                    0.9
+                );
+
+            result.reasoning =
+                'Einstein Prompt Builder single-field extraction: ' +
+                String.valueOf(
+                    parsed.get(
+                        'reasoning'
+                    )
+                );
+
+            result.isMergedAnswer =
+                toBoolean(
+                    parsed.get(
+                        'isMergedAnswer'
+                    ),
+                    false
+                );
+
+            result.sourceFields.addAll(
+                sourceFields
+            );
+
+            return result;
+
+        } catch (Exception e) {
+
+            System.debug(
+                LoggingLevel.WARN,
+                'Single-field Prompt Builder fill skipped for ' +
+                question.questionText +
+                ': ' +
+                e.getMessage()
+            );
+
+            return null;
+
+        }
 
     }
 
@@ -375,8 +708,22 @@ public without sharing class EinsteinPromptExtractionService {
 
         ) {
 
+            if (
+
+                !(rawAnswer instanceof Map<String, Object>)
+
+            ) {
+
+                continue;
+
+            }
+
             Map<String, Object> answer =
                 (Map<String, Object>) rawAnswer;
+
+            normalizeParsedCommand(
+                answer
+            );
 
             String questionId =
                 firstStringValue(
@@ -436,9 +783,81 @@ public without sharing class EinsteinPromptExtractionService {
                         'answer',
                         'recommendedValue',
                         'fieldValue',
-                        'extractedValue'
+                        'extractedValue',
+                        'selectedValue',
+                        'outputValue',
+                        'replacementValue'
                     }
                 );
+
+            Boolean noDataFound =
+                isNoDataResponse(
+                    answer,
+                    value
+                );
+
+            if (
+
+                noDataFound
+
+            ) {
+
+                UserDataDiscoveryService.DataDiscoveryResult result =
+                    new UserDataDiscoveryService.DataDiscoveryResult();
+
+                result.questionId =
+                    questionId;
+
+                result.bestMatchConfidence =
+                    toDecimal(
+                        answer.get(
+                            'confidence'
+                        ),
+                        0
+                    );
+
+                result.noDataFound =
+                    true;
+
+                result.noDataMessage =
+                    firstStringValue(
+                        answer,
+                        new List<String>{
+                            'noDataMessage',
+                            'message',
+                            'userMessage',
+                            'clarificationQuestion',
+                            'reasoning',
+                            'reason'
+                        }
+                    );
+
+                result.reasoning =
+                    'Einstein Prompt Builder no-data response: ' +
+                    firstStringValue(
+                        answer,
+                        new List<String>{
+                            'reasoning',
+                            'reason'
+                        }
+                    );
+
+                result.sourceFields.addAll(
+                    parseSourceFields(
+                        answer.get(
+                            'sourceFields'
+                        )
+                    )
+                );
+
+                results.put(
+                    questionId,
+                    result
+                );
+
+                continue;
+
+            }
 
             String validatedValue =
                 validateValue(
@@ -455,6 +874,32 @@ public without sharing class EinsteinPromptExtractionService {
                 )
 
             ) {
+
+                continue;
+
+            }
+
+            List<String> sourceFields =
+                parseSourceFields(
+                    answer.get(
+                        'sourceFields'
+                    )
+                );
+
+            if (
+
+                sourceFields.isEmpty()
+
+            ) {
+
+                results.put(
+                    questionId,
+                    buildNoDataResult(
+                        questionId,
+                        answer,
+                        'Prompt Builder returned a value without source fields, so the answer was not used.'
+                    )
+                );
 
                 continue;
 
@@ -479,31 +924,25 @@ public without sharing class EinsteinPromptExtractionService {
 
             result.reasoning =
                 'Einstein Prompt Builder extraction: ' +
-                String.valueOf(
-                    answer.get(
+                firstStringValue(
+                    answer,
+                    new List<String>{
+                        'reasoning',
                         'reason'
-                    )
+                    }
+                );
+
+            result.isMergedAnswer =
+                toBoolean(
+                    answer.get(
+                        'isMergedAnswer'
+                    ),
+                    false
                 );
 
             result.sourceFields.addAll(
-                parseSourceFields(
-                    answer.get(
-                        'sourceFields'
-                    )
-                )
+                sourceFields
             );
-
-            if (
-
-                result.sourceFields.isEmpty()
-
-            ) {
-
-                result.sourceFields.add(
-                    'Einstein Prompt Builder'
-                );
-
-            }
 
             results.put(
                 questionId,
@@ -584,7 +1023,10 @@ public without sharing class EinsteinPromptExtractionService {
                     'answer',
                     'recommendedValue',
                     'fieldValue',
-                    'extractedValue'
+                    'extractedValue',
+                    'selectedValue',
+                    'outputValue',
+                    'replacementValue'
                 }
             );
 
@@ -725,6 +1167,11 @@ public without sharing class EinsteinPromptExtractionService {
 
                     option.equalsIgnoreCase(
                         value.trim()
+                    ) ||
+                    normalizeText(
+                        option
+                    ) == normalizeText(
+                        value
                     )
 
                 ) {
@@ -850,6 +1297,279 @@ public without sharing class EinsteinPromptExtractionService {
 
     }
 
+    private static void normalizeParsedCommand(
+        Map<String, Object> parsed
+    ) {
+        if (parsed == null) {
+            return;
+        }
+
+        mergeFirstNestedCommand(
+            parsed
+        );
+
+        if (!parsed.containsKey('questionId')) {
+            Object questionId =
+                firstPresentValue(
+                    parsed,
+                    new List<String>{
+                        'targetQuestionId',
+                        'questionId',
+                        'id',
+                        'fieldId'
+                    }
+                );
+
+            if (questionId != null) {
+                parsed.put(
+                    'questionId',
+                    questionId
+                );
+            }
+        }
+
+        if (!parsed.containsKey('targetLabel')) {
+            Object label =
+                firstPresentValue(
+                    parsed,
+                    new List<String>{
+                        'targetLabel',
+                        'fieldLabel',
+                        'targetFieldLabel',
+                        'fieldName',
+                        'field',
+                        'label',
+                        'questionLabel',
+                        'targetField'
+                    }
+                );
+
+            if (label != null) {
+                parsed.put(
+                    'targetLabel',
+                    label
+                );
+            }
+        }
+
+        if (!parsed.containsKey('newValue')) {
+            Object value =
+                firstPresentValue(
+                    parsed,
+                    new List<String>{
+                        'newValue',
+                        'value',
+                        'answer',
+                        'recommendedValue',
+                        'fieldValue',
+                        'extractedValue',
+                        'selectedValue',
+                        'outputValue',
+                        'replacementValue'
+                    }
+                );
+
+            if (value != null) {
+                parsed.put(
+                    'newValue',
+                    value
+                );
+            }
+        }
+    }
+
+    private static Boolean isNoDataResponse(
+        Map<String, Object> parsed,
+        String value
+    ) {
+        if (parsed == null) {
+            return false;
+        }
+
+        if (
+            toBoolean(
+                parsed.get(
+                    'noDataFound'
+                ),
+                false
+            ) ||
+            toBoolean(
+                parsed.get(
+                    'missingData'
+                ),
+                false
+            )
+        ) {
+            return true;
+        }
+
+        String action =
+            firstStringValue(
+                parsed,
+                new List<String>{
+                    'action',
+                    'type',
+                    'command',
+                    'status'
+                }
+            );
+
+        if (
+            !String.isBlank(
+                action
+            )
+        ) {
+            String normalizedAction =
+                normalizeText(
+                    action
+                );
+
+            if (
+                normalizedAction == 'no data found' ||
+                normalizedAction == 'no data' ||
+                normalizedAction == 'missing data' ||
+                normalizedAction == 'not found' ||
+                normalizedAction == 'unfillable'
+            ) {
+                return true;
+            }
+        }
+
+        return String.isBlank(
+            value
+        ) &&
+            !String.isBlank(
+                firstStringValue(
+                    parsed,
+                    new List<String>{
+                        'noDataMessage',
+                        'message',
+                        'userMessage'
+                    }
+                )
+            );
+    }
+
+    private static UserDataDiscoveryService.DataDiscoveryResult buildNoDataResult(
+        String questionId,
+        Map<String, Object> parsed,
+        String defaultReason
+    ) {
+        UserDataDiscoveryService.DataDiscoveryResult result =
+            new UserDataDiscoveryService.DataDiscoveryResult();
+
+        result.questionId =
+            questionId;
+
+        result.bestMatchConfidence =
+            toDecimal(
+                parsed == null
+                    ? null
+                    : parsed.get(
+                        'confidence'
+                    ),
+                0
+            );
+
+        result.noDataFound =
+            true;
+
+        result.noDataMessage =
+            parsed == null
+                ? null
+                : firstStringValue(
+                    parsed,
+                    new List<String>{
+                        'noDataMessage',
+                        'message',
+                        'userMessage',
+                        'clarificationQuestion'
+                    }
+                );
+
+        String reason =
+            parsed == null
+                ? null
+                : firstStringValue(
+                    parsed,
+                    new List<String>{
+                        'reasoning',
+                        'reason'
+                    }
+                );
+
+        result.reasoning =
+            String.isBlank(
+                reason
+            )
+                ? defaultReason
+                : reason;
+
+        return result;
+    }
+
+    private static void mergeFirstNestedCommand(
+        Map<String, Object> parsed
+    ) {
+        Object nestedValue =
+            firstPresentValue(
+                parsed,
+                new List<String>{
+                    'answers',
+                    'fields',
+                    'fieldUpdates',
+                    'updates',
+                    'results',
+                    'filledFields'
+                }
+            );
+
+        if (nestedValue instanceof List<Object>) {
+            List<Object> nestedList =
+                (List<Object>) nestedValue;
+
+            if (
+                !nestedList.isEmpty() &&
+                nestedList[0] instanceof Map<String, Object>
+            ) {
+                Map<String, Object> nestedCommand =
+                    (Map<String, Object>) nestedList[0];
+
+                for (String key : nestedCommand.keySet()) {
+                    if (
+                        !parsed.containsKey(key) ||
+                        parsed.get(key) == null
+                    ) {
+                        parsed.put(
+                            key,
+                            nestedCommand.get(key)
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    private static Object firstPresentValue(
+        Map<String, Object> values,
+        List<String> keys
+    ) {
+        if (values == null) {
+            return null;
+        }
+
+        for (String key : keys) {
+            if (
+                values.containsKey(key) &&
+                values.get(key) != null
+            ) {
+                return values.get(key);
+            }
+        }
+
+        return null;
+    }
+
     private static void addSourceField(
 
         List<String> sourceFields,
@@ -922,6 +1642,65 @@ public without sharing class EinsteinPromptExtractionService {
             return defaultValue;
 
         }
+
+    }
+
+    private static Boolean toBoolean(
+
+        Object rawValue,
+
+        Boolean defaultValue
+
+    ) {
+
+        if (
+
+            rawValue == null
+
+        ) {
+
+            return defaultValue;
+
+        }
+
+        if (
+
+            rawValue instanceof Boolean
+
+        ) {
+
+            return (Boolean) rawValue;
+
+        }
+
+        String normalizedValue =
+            String.valueOf(
+                rawValue
+            )
+                .trim()
+                .toLowerCase();
+
+        if (
+
+            normalizedValue == 'true'
+
+        ) {
+
+            return true;
+
+        }
+
+        if (
+
+            normalizedValue == 'false'
+
+        ) {
+
+            return false;
+
+        }
+
+        return defaultValue;
 
     }
 

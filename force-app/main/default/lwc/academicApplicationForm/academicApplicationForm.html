@@ -22,30 +22,9 @@
 
             <div class="content-area">
 
-                <!-- AI AUTO FILL -->
+                <div class="form-workspace">
 
-                <c-ai-form-filler-button
-
-                    form-data={formData}
-
-                    current-page={currentPage}
-
-                    form-config={schemaQuestions}
-
-                    submission-id={submissionId}
-
-                    onaifilled={handleAIFilled}>
-
-                </c-ai-form-filler-button>
-
-                <c-ai-form-filler-chat
-                    form-data={formData}
-                    current-page={currentPage}
-                    form-config={schemaQuestions}
-                    onfieldaimessage={handleFieldAIMessage}
-                    onaifilled={handleAIFilled}>
-
-                </c-ai-form-filler-chat>
+                    <div class="form-main">
 
                 <!-- AI PROGRESS -->
 
@@ -73,7 +52,7 @@
 
                     <template if:false={isSaving}>
 
-                        <span class="text-saved">
+                        <span class={saveStatusClass}>
 
                             {saveStatus}
 
@@ -176,6 +155,40 @@
                         </button>
 
                     </template>
+
+                </div>
+
+                    </div>
+
+                    <!-- AI AUTO FILL -->
+
+                    <aside class="ai-assistant-panel">
+
+                        <c-ai-form-filler-button
+
+                            form-data={formData}
+
+                            current-page={currentPage}
+
+                            form-config={schemaQuestions}
+
+                            submission-id={submissionId}
+
+                            onaifilled={handleAIFilled}>
+
+                        </c-ai-form-filler-button>
+
+                        <c-ai-form-filler-chat
+                            form-data={formData}
+                            current-page={currentPage}
+                            form-config={schemaQuestions}
+                            submission-id={submissionId}
+                            onfieldaimessage={handleFieldAIMessage}
+                            onaifilled={handleAIFilled}>
+
+                        </c-ai-form-filler-chat>
+
+                    </aside>
 
                 </div>
 

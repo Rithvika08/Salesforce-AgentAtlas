@@ -56,6 +56,9 @@ export default class AcademicApplicationForm
 
     saveTimeout;
 
+    localDraftKey =
+        'academicApplicationFormDraft:v1';
+
     // TOTAL PAGES
 
     totalPages = 5;
@@ -214,6 +217,16 @@ export default class AcademicApplicationForm
 
             }
 
+            if (
+                !this.hasStoredFormData(
+                    this.formData
+                )
+            ) {
+
+                this.restoreLocalDraftBackup();
+
+            }
+
         }
 
         catch(error) {
@@ -222,6 +235,8 @@ export default class AcademicApplicationForm
                 'INIT ERROR:',
                 JSON.stringify(error)
             );
+
+            this.restoreLocalDraftBackup();
 
         }
 
@@ -250,6 +265,8 @@ export default class AcademicApplicationForm
             }
 
         };
+
+        this.saveLocalDraftBackup();
 
         this.clearFieldAIMessage(
             fieldId
@@ -302,11 +319,23 @@ export default class AcademicApplicationForm
 
         }
 
+        const fieldMessages =
+            this.normalizeFieldMessages(
+                event.detail.fieldMessages || {}
+            );
+
         const filledData =
             this.formatFilledDataValues(
                 this.filterValidFilledData(
-                    event.detail.filledData || {}
+                    event.detail.filledData || {},
+                    fieldMessages
                 )
+            );
+
+        const displayFieldMessages =
+            this.removeMessagesForFilledFields(
+                fieldMessages,
+                filledData
             );
 
         console.log(
@@ -318,6 +347,24 @@ export default class AcademicApplicationForm
 
         this.aiComparisonResults =
             event.detail.aiComparisonResults || {};
+
+        if (
+
+            Object.keys(
+                displayFieldMessages
+            ).length > 0
+
+        ) {
+
+            this.aiFieldMessages = {
+
+                ...this.aiFieldMessages,
+
+                ...displayFieldMessages
+
+            };
+
+        }
 
         this.clearFieldAIMessages(
             Object.keys(
@@ -358,16 +405,6 @@ export default class AcademicApplicationForm
 
         }
 
-        this.sourceBreakdown =
-            this.buildSourceBreakdown(
-                filledData
-            );
-
-        this.sourceBreakdownByQuestion =
-            this.buildSourceBreakdownByQuestion(
-                this.sourceBreakdown
-            );
-
         // MERGE DATA
 
         const sanitizedMergedData =
@@ -382,6 +419,16 @@ export default class AcademicApplicationForm
         this.formData =
             sanitizedMergedData;
 
+        this.sourceBreakdown =
+            this.buildSourceBreakdown(
+                this.formData
+            );
+
+        this.sourceBreakdownByQuestion =
+            this.buildSourceBreakdownByQuestion(
+                this.sourceBreakdown
+            );
+
         // FORCE REFRESH
 
         this.formData =
@@ -390,6 +437,8 @@ export default class AcademicApplicationForm
                     this.formData
                 )
             );
+
+        this.saveLocalDraftBackup();
 
         console.log(
             'AI FORM DATA:',
@@ -410,12 +459,119 @@ export default class AcademicApplicationForm
 
     }
 
+    normalizeFieldMessages(fieldMessages) {
+
+        if (
+
+            !fieldMessages ||
+            typeof fieldMessages !== 'object'
+
+        ) {
+
+            return {};
+
+        }
+
+        return Object.keys(fieldMessages).reduce((messages, questionId) => {
+
+            const message =
+                fieldMessages[questionId];
+
+            const fieldConfig =
+                this.schemaQuestions.find(field => {
+
+                    return field.id === questionId;
+
+                });
+
+            if (
+
+                questionId &&
+                typeof message === 'string' &&
+                message.trim() &&
+                !this.isCheckboxField(
+                    fieldConfig
+                )
+
+            ) {
+
+                messages[questionId] =
+                    message.trim();
+
+            }
+
+            return messages;
+
+        }, {});
+
+    }
+
+    removeMessagesForFilledFields(
+
+        fieldMessages = {},
+
+        filledData = {}
+
+    ) {
+
+        const displayMessages = {
+
+            ...fieldMessages
+
+        };
+
+        Object.keys(
+            filledData || {}
+        ).forEach(questionId => {
+
+            delete displayMessages[questionId];
+
+        });
+
+        return displayMessages;
+
+    }
+
+    isCheckboxField(fieldConfig) {
+
+        const fieldType =
+            String(
+                fieldConfig?.type || ''
+            )
+                .toLowerCase()
+                .trim();
+
+        return fieldType === 'checkbox' ||
+            fieldType === 'check box' ||
+            fieldType === 'boolean';
+
+    }
+
     handleFieldAIMessage(event) {
 
         const questionId =
             event.detail?.questionId;
 
         if (!questionId) {
+
+            return;
+
+        }
+
+        const fieldConfig =
+            this.schemaQuestions.find(field => {
+
+                return field.id === questionId;
+
+            });
+
+        if (
+
+            this.isCheckboxField(
+                fieldConfig
+            )
+
+        ) {
 
             return;
 
@@ -569,6 +725,20 @@ export default class AcademicApplicationForm
 
                 if (
 
+                    !this.shouldShowMergedSourceFields(
+                        questionId,
+                        filledData[questionId],
+                        realSourceFields
+                    )
+
+                ) {
+
+                    return null;
+
+                }
+
+                if (
+
                     realSourceFields.length < 2
 
                 ) {
@@ -580,6 +750,8 @@ export default class AcademicApplicationForm
                 return {
                     id:
                         questionId,
+                    isMergedAnswer:
+                        true,
                     label:
                         this.getQuestionLabel(
                             questionId
@@ -598,6 +770,289 @@ export default class AcademicApplicationForm
 
             })
             .filter(Boolean);
+
+    }
+
+    shouldShowMergedSourceFields(
+
+        questionId,
+
+        fieldResult,
+
+        realSourceFields
+
+    ) {
+
+        if (
+
+            !realSourceFields ||
+            realSourceFields.length < 2
+
+        ) {
+
+            return false;
+
+        }
+
+        if (
+
+            fieldResult?.isMergedAnswer === true
+
+        ) {
+
+            return true;
+
+        }
+
+        const fieldConfig =
+            this.schemaQuestions.find(field => {
+
+                return field.id === questionId;
+
+            });
+
+        const fieldType =
+            String(
+                fieldConfig?.type || ''
+            )
+                .toLowerCase();
+
+        if (
+
+            this.isSingleValueSourceBreakdownType(
+                fieldType
+            )
+
+        ) {
+
+            return false;
+
+        }
+
+        const normalizedLabel =
+            this.normalizeMergedAnswerText(
+                fieldConfig?.label || ''
+            );
+
+        if (
+
+            this.isMergedAnswerLabel(
+                normalizedLabel
+            )
+
+        ) {
+
+            return true;
+
+        }
+
+        return fieldType === 'textarea' &&
+            this.hasMergedSourcePattern(
+                realSourceFields
+            );
+
+    }
+
+    isSingleValueSourceBreakdownType(fieldType) {
+
+        return [
+            'checkbox',
+            'date',
+            'dropdown',
+            'email',
+            'number',
+            'phone',
+            'picklist',
+            'radio'
+        ].includes(
+            fieldType
+        );
+
+    }
+
+    isMergedAnswerLabel(normalizedLabel) {
+
+        return this.isFullAddressMergedLabel(
+                normalizedLabel
+            ) ||
+            this.isContactInformationMergedLabel(
+                normalizedLabel
+            ) ||
+            this.isEmploymentMergedLabel(
+                normalizedLabel
+            );
+
+    }
+
+    isFullAddressMergedLabel(normalizedLabel) {
+
+        return (
+            normalizedLabel.includes(
+                'full address'
+            ) ||
+            normalizedLabel.includes(
+                'mailing address'
+            )
+        ) &&
+            !this.containsAnyMergedAnswerTerm(
+                normalizedLabel,
+                [
+                    'city',
+                    'country',
+                    'postal',
+                    'province',
+                    'state',
+                    'street',
+                    'zip'
+                ]
+            );
+
+    }
+
+    isContactInformationMergedLabel(normalizedLabel) {
+
+        return (
+            normalizedLabel.includes(
+                'contact information'
+            ) ||
+            normalizedLabel.includes(
+                'contact details'
+            ) ||
+            normalizedLabel.includes(
+                'contact info'
+            )
+        ) &&
+            !this.containsAnyMergedAnswerTerm(
+                normalizedLabel,
+                [
+                    'email',
+                    'method',
+                    'number',
+                    'phone'
+                ]
+            );
+
+    }
+
+    isEmploymentMergedLabel(normalizedLabel) {
+
+        return normalizedLabel.includes(
+                'describe your employment'
+            ) ||
+            normalizedLabel.includes(
+                'employment summary'
+            ) ||
+            normalizedLabel.includes(
+                'employment information'
+            ) ||
+            normalizedLabel.includes(
+                'current work details'
+            ) ||
+            normalizedLabel.includes(
+                'job information'
+            ) ||
+            normalizedLabel.includes(
+                'work information'
+            );
+
+    }
+
+    hasMergedSourcePattern(realSourceFields) {
+
+        const normalizedSources =
+            realSourceFields
+                .map(sourceField => {
+
+                    return this.normalizeMergedAnswerText(
+                        sourceField
+                    );
+
+                })
+                .join(' ');
+
+        const addressMatchCount =
+            this.countMergedAnswerTerms(
+                normalizedSources,
+                [
+                    'city',
+                    'country',
+                    'mailing',
+                    'postal',
+                    'province',
+                    'state',
+                    'street',
+                    'zip'
+                ]
+            );
+
+        const contactMatchCount =
+            this.countMergedAnswerTerms(
+                normalizedSources,
+                [
+                    'email',
+                    'mobile',
+                    'phone'
+                ]
+            );
+
+        const employmentMatchCount =
+            this.countMergedAnswerTerms(
+                normalizedSources,
+                [
+                    'company',
+                    'employer',
+                    'employment',
+                    'job title',
+                    'schedule',
+                    'status',
+                    'title'
+                ]
+            );
+
+        return addressMatchCount >= 2 ||
+            contactMatchCount >= 2 ||
+            employmentMatchCount >= 2;
+
+    }
+
+    countMergedAnswerTerms(text, terms) {
+
+        return terms.reduce(
+            (count, term) => {
+
+                return text.includes(
+                    term
+                )
+                    ? count + 1
+                    : count;
+
+            },
+            0
+        );
+
+    }
+
+    containsAnyMergedAnswerTerm(text, terms) {
+
+        return terms.some(term => {
+
+            return text.includes(
+                term
+            );
+
+        });
+
+    }
+
+    normalizeMergedAnswerText(value) {
+
+        return String(
+            value || ''
+        )
+            .toLowerCase()
+            .replace(/[_./-]+/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
 
     }
 
@@ -712,9 +1167,6 @@ export default class AcademicApplicationForm
             normalizedSource.toLowerCase();
 
         return lowerSource.includes(
-            'openai semantic extraction'
-        ) ||
-            lowerSource.includes(
                 'prompt builder'
             ) ||
             lowerSource === 'prompt builder' ||
@@ -770,7 +1222,13 @@ export default class AcademicApplicationForm
 
     }
 
-    filterValidFilledData(filledData) {
+    filterValidFilledData(
+
+        filledData,
+
+        fieldMessages = {}
+
+    ) {
 
         const validData = {};
 
@@ -800,6 +1258,19 @@ export default class AcademicApplicationForm
 
             if (
 
+                this.isBlankAIValue(
+                    fieldValue
+                ) &&
+                fieldMessages[questionId]
+
+            ) {
+
+                return;
+
+            }
+
+            if (
+
                 this.isValidFieldValue(
                     fieldValue,
                     fieldConfig
@@ -823,6 +1294,14 @@ export default class AcademicApplicationForm
         });
 
         return validData;
+
+    }
+
+    isBlankAIValue(value) {
+
+        return value === '' ||
+            value === null ||
+            value === undefined;
 
     }
 
@@ -867,21 +1346,7 @@ export default class AcademicApplicationForm
 
     ) {
 
-        if (
-
-            !this.isContactInformationField(
-                fieldConfig
-            )
-
-        ) {
-
-            return value;
-
-        }
-
-        return this.formatContactInformationValue(
-            value
-        );
+        return value;
 
     }
 
@@ -1585,6 +2050,8 @@ export default class AcademicApplicationForm
             this.saveStatus =
                 'Saving...';
 
+            this.saveLocalDraftBackup();
+
             const result =
 
                 await saveFormDraft({
@@ -1606,17 +2073,71 @@ export default class AcademicApplicationForm
 
                 });
 
+            if (
+                !result ||
+                result.success === false
+            ) {
+
+                const message =
+                    result && result.errorMessage
+                        ? result.errorMessage
+                        : 'Draft could not be saved.';
+
+                this.saveStatus =
+                    this.getSaveFailedMessage(
+                        message
+                    );
+
+                return false;
+
+            }
+
             this.submissionId =
                 result.submissionId;
+
+            if (
+                !this.submissionId
+            ) {
+
+                this.saveStatus =
+                    'Save Failed: Draft save did not return a submission id.';
+
+                return false;
+
+            }
+
+            if (
+                result.responseSaveErrors &&
+                result.responseSaveErrors.length
+            ) {
+
+                console.warn(
+                    'Some response rows were not saved:',
+                    JSON.stringify(
+                        result.responseSaveErrors
+                    )
+                );
+
+            }
 
             this.saveStatus =
                 'Saved';
 
+            this.saveLocalDraftBackup();
+
             setTimeout(() => {
 
-                this.saveStatus = '';
+                if (
+                    this.saveStatus === 'Saved'
+                ) {
+
+                    this.saveStatus = '';
+
+                }
 
             }, 2000);
+
+            return true;
 
         }
 
@@ -1627,8 +2148,19 @@ export default class AcademicApplicationForm
                 JSON.stringify(error)
             );
 
+            const message =
+                this.getErrorMessage(
+                    error
+                );
+
             this.saveStatus =
-                'Save Failed';
+                message
+                    ? this.getSaveFailedMessage(
+                        message
+                    )
+                    : 'Save Failed';
+
+            return false;
 
         }
 
@@ -1648,7 +2180,16 @@ export default class AcademicApplicationForm
 
             // FINAL SAVE
 
-            await this.handleAutoSave();
+            const saved =
+                await this.handleAutoSave();
+
+            if (
+                !saved
+            ) {
+
+                return;
+
+            }
 
             const result =
 
@@ -1669,6 +2210,8 @@ export default class AcademicApplicationForm
 
             this.isSubmitted = true;
 
+            this.clearLocalDraftBackup();
+
         }
 
         catch(error) {
@@ -1682,11 +2225,259 @@ export default class AcademicApplicationForm
 
     }
 
+    getSaveFailedMessage(message) {
+
+        const details =
+            message || 'Draft could not be saved.';
+
+        if (
+            String(details)
+                .includes(
+                    'STORAGE_LIMIT_EXCEEDED'
+                )
+        ) {
+
+            return `Save Failed: Salesforce storage is full, so the server draft cannot be saved yet. Your work is kept in this browser. Details: ${details}`;
+
+        }
+
+        return `Save Failed: ${details}`;
+
+    }
+
+    hasStoredFormData(formData) {
+
+        return Object.values(
+            formData || {}
+        ).some(fieldValue => {
+
+            const value =
+                fieldValue?.value;
+
+            return value !== null &&
+                value !== undefined &&
+                String(value).trim() !== '';
+
+        });
+
+    }
+
+    saveLocalDraftBackup() {
+
+        try {
+
+            window.localStorage.setItem(
+                this.localDraftKey,
+                JSON.stringify({
+                    formData:
+                        this.formData || {},
+                    currentPage:
+                        this.currentPage,
+                    submissionId:
+                        this.submissionId || null,
+                    aiFieldMessages:
+                        this.aiFieldMessages || {},
+                    savedAt:
+                        new Date().toISOString()
+                })
+            );
+
+        }
+
+        catch(error) {
+
+            console.warn(
+                'LOCAL DRAFT BACKUP FAILED:',
+                error
+            );
+
+        }
+
+    }
+
+    restoreLocalDraftBackup() {
+
+        try {
+
+            const rawDraft =
+                window.localStorage.getItem(
+                    this.localDraftKey
+                );
+
+            if (
+                !rawDraft
+            ) {
+
+                return false;
+
+            }
+
+            const draft =
+                JSON.parse(
+                    rawDraft
+                );
+
+            if (
+                !draft ||
+                !this.hasStoredFormData(
+                    draft.formData
+                )
+            ) {
+
+                return false;
+
+            }
+
+            const sanitizedDraft =
+                this.sanitizeFormData(
+                    draft.formData || {}
+                );
+
+            this.formData =
+                JSON.parse(
+                    JSON.stringify(
+                        sanitizedDraft.data
+                    )
+                );
+
+            this.currentPage =
+                draft.currentPage || this.currentPage;
+
+            this.submissionId =
+                draft.submissionId || this.submissionId;
+
+            this.aiFieldMessages =
+                this.normalizeFieldMessages(
+                    draft.aiFieldMessages || {}
+                );
+
+            this.sourceBreakdown =
+                this.buildSourceBreakdown(
+                    this.formData
+                );
+
+            this.sourceBreakdownByQuestion =
+                this.buildSourceBreakdownByQuestion(
+                    this.sourceBreakdown
+                );
+
+            this.saveStatus =
+                'Restored unsaved draft from this browser.';
+
+            setTimeout(() => {
+
+                if (
+                    this.saveStatus ===
+                    'Restored unsaved draft from this browser.'
+                ) {
+
+                    this.saveStatus = '';
+
+                }
+
+            }, 2500);
+
+            return true;
+
+        }
+
+        catch(error) {
+
+            console.warn(
+                'LOCAL DRAFT RESTORE FAILED:',
+                error
+            );
+
+            return false;
+
+        }
+
+    }
+
+    clearLocalDraftBackup() {
+
+        try {
+
+            window.localStorage.removeItem(
+                this.localDraftKey
+            );
+
+        }
+
+        catch(error) {
+
+            console.warn(
+                'LOCAL DRAFT CLEAR FAILED:',
+                error
+            );
+
+        }
+
+    }
+
+    getErrorMessage(error) {
+
+        if (
+            !error
+        ) {
+
+            return '';
+
+        }
+
+        if (
+            Array.isArray(
+                error.body
+            )
+        ) {
+
+            return error.body
+                .map(item => item.message)
+                .filter(Boolean)
+                .join(', ');
+
+        }
+
+        if (
+            error.body &&
+            typeof error.body.message === 'string'
+        ) {
+
+            return error.body.message;
+
+        }
+
+        if (
+            typeof error.message === 'string'
+        ) {
+
+            return error.message;
+
+        }
+
+        return '';
+
+    }
+
     // HELPERS
 
     get isFirstPage() {
 
         return this.currentPage === 1;
+
+    }
+
+    get saveStatusClass() {
+
+        return String(
+            this.saveStatus || ''
+        )
+            .toLowerCase()
+            .startsWith(
+                'save failed'
+            )
+                ? 'text-save-error'
+                : 'text-saved';
 
     }
 

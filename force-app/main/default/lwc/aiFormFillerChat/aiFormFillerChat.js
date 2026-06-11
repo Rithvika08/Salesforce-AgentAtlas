@@ -7,19 +7,29 @@ from 'lightning/platformShowToastEvent';
 import fillFormWithAI
 from '@salesforce/apex/AIFormFillerController.fillFormWithAI';
 
+import fillSingleFieldWithAI
+from '@salesforce/apex/AIFormFillerController.fillSingleFieldWithAI';
+
 import interpretPromptCommand
 from '@salesforce/apex/PromptBuilderCommandInterpreter.interpretCommand';
+
+import logChatDecision
+from '@salesforce/apex/AIFormFillLogger.logChatDecision';
 
 export default class AiFormFillerChat
     extends LightningElement {
 
     minimumSemanticConfidence = 0.7;
 
+    maxClarificationOptions = 8;
+
     @api formConfig = [];
 
     @api formData = {};
 
     @api currentPage;
+
+    @api submissionId;
 
     @track messages = [
         {
@@ -38,9 +48,15 @@ export default class AiFormFillerChat
 
     pendingField = null;
 
+    pendingClarification = null;
+
+    clarificationMemory = {};
+
+    clarificationLog = [];
+
     useLocalCommandFallback = true;
 
-    showPromptBuilderDiagnostics = true;
+    showPromptBuilderDiagnostics = false;
 
     lastCommandInterpreterFailure = '';
 
@@ -139,6 +155,21 @@ export default class AiFormFillerChat
                 this.normalizeText(
                     prompt
                 );
+
+            const clarificationSelection =
+                await this.handleClarificationSelectionPrompt(
+                    prompt
+                );
+
+            if (
+
+                clarificationSelection
+
+            ) {
+
+                return;
+
+            }
 
             if (
 
@@ -300,7 +331,9 @@ export default class AiFormFillerChat
                             prompt
                         )
                     )
-                        ? `I could not process that with the AI command interpreter yet: ${this.lastCommandInterpreterFailure}`
+                        ? this.normalizeErrorMessage(
+                            this.lastCommandInterpreterFailure
+                        )
                         : 'Please mention the field and what you want me to do with it.',
                     'assistant'
                 );
@@ -339,9 +372,20 @@ export default class AiFormFillerChat
                 prompt
             );
 
+        const selectedFieldMessages =
+            this.filterFilledData(
+                result?.fieldMessages || {},
+                prompt
+            );
+
         const selectedCount =
             Object.keys(
                 selectedData
+            ).length;
+
+        const selectedMessageCount =
+            Object.keys(
+                selectedFieldMessages
             ).length;
 
         if (
@@ -350,10 +394,59 @@ export default class AiFormFillerChat
 
         ) {
 
+            if (
+
+                selectedMessageCount > 0
+
+            ) {
+
+                this.dispatchEvent(
+                    new CustomEvent(
+                        'aifilled',
+                        {
+                            detail: {
+                                filledData: {},
+                                fieldMessages:
+                                    selectedFieldMessages,
+                                metadata:
+                                    result.metadata,
+                                aiComparisonResults:
+                                    result.aiComparisonResults,
+                                confidence:
+                                    result.overallConfidence,
+                                prompt:
+                                    prompt
+                            }
+                        }
+                    )
+                );
+
+                this.addMessage(
+                    'I could not find saved data for that field. Please enter it manually.',
+                    'assistant'
+                );
+
+                return;
+
+            }
+
             this.addMessage(
                 'I could not find a matching field with available data for that prompt.',
                 'assistant'
             );
+
+            this.logChatDecisionSafely({
+                action:
+                    'no_data',
+                status:
+                    'No Data',
+                source:
+                    'AI Form Chat',
+                reason:
+                    'No matching field with available data was found for the chat prompt.',
+                value:
+                    prompt
+            });
 
             return;
 
@@ -370,6 +463,8 @@ export default class AiFormFillerChat
                             result.metadata,
                         aiComparisonResults:
                             result.aiComparisonResults,
+                        fieldMessages:
+                            selectedFieldMessages,
                         confidence:
                             result.overallConfidence,
                         prompt:
@@ -416,6 +511,17 @@ export default class AiFormFillerChat
 
         try {
 
+            const likelyField =
+                this.findBestFieldMatch(
+                    prompt
+                );
+
+            const existingValues =
+                this.buildPromptBuilderExistingValues(
+                    likelyField,
+                    null
+                );
+
             const result =
                 await interpretPromptCommand({
                     command:
@@ -428,10 +534,13 @@ export default class AiFormFillerChat
                         ),
                     existingValuesJson:
                         JSON.stringify(
-                            this.formData || {}
+                            existingValues
                         ),
                     applicantKnowledge:
-                        ''
+                        this.buildPromptBuilderApplicantKnowledge(
+                            likelyField,
+                            null
+                        )
                 });
 
             if (
@@ -485,11 +594,6 @@ export default class AiFormFillerChat
 
             ) {
 
-                this.addMessage(
-                    'Prompt Builder understood the fill command, but it did not return a value. I used the controller fallback to fill it.',
-                    'assistant'
-                );
-
                 // eslint-disable-next-line no-console
                 console.warn(
                     'Prompt Builder fill command returned no direct value',
@@ -503,8 +607,9 @@ export default class AiFormFillerChat
         } catch (error) {
 
             this.lastCommandInterpreterFailure =
-                error?.body?.message ||
-                error?.message ||
+                this.extractErrorMessage(
+                    error
+                ) ||
                 'Prompt Builder command call failed.';
 
             // Prompt Builder command understanding is a fallback. Keep the local chat working.
@@ -535,7 +640,9 @@ export default class AiFormFillerChat
                     this.isChoiceField(
                         field
                     )
-                        ? field.options || []
+                        ? this.getFieldOptions(
+                            field
+                        )
                         : []
             };
 
@@ -565,10 +672,33 @@ export default class AiFormFillerChat
             return {
                 type:
                     'clarify',
+                originalType:
+                    this.normalizePromptBuilderAction(
+                        result.pendingAction ||
+                        result.intendedAction ||
+                        result.actionType ||
+                        result.action ||
+                        ''
+                    ),
                 fieldPhrase:
                     result.fieldLabel || '',
                 value:
-                    result.clarificationQuestion || ''
+                    result.clarificationQuestion || '',
+                pendingValue:
+                    result.newValue ||
+                    result.value ||
+                    result.answer ||
+                    result.recommendedValue ||
+                    result.fieldValue ||
+                    result.extractedValue ||
+                    '',
+                clarificationOptions:
+                    this.normalizePromptBuilderClarificationOptions(
+                        result.clarificationOptions ||
+                        result.options ||
+                        result.choices ||
+                        result.possibleValues
+                    )
             };
 
         }
@@ -658,6 +788,10 @@ export default class AiFormFillerChat
                 true,
             promptBuilderRawResponse:
                 result.promptResponse || '',
+            questionId:
+                result.questionId ||
+                result.targetQuestionId ||
+                '',
             fieldPhrase:
                 result.fieldLabel ||
                 result.targetLabel ||
@@ -682,9 +816,62 @@ export default class AiFormFillerChat
                     result.source ||
                     result.sourceFieldNames
                 ),
+            isMergedAnswer:
+                this.normalizePromptBuilderBoolean(
+                    result.isMergedAnswer ||
+                    result.mergedAnswer ||
+                    result.isCombinedAnswer ||
+                    result.combinedAnswer
+                ),
             confidence:
                 confidence
         };
+
+    }
+
+    normalizePromptBuilderBoolean(value) {
+
+        if (
+
+            value === true ||
+            value === false
+
+        ) {
+
+            return value;
+
+        }
+
+        const normalizedValue =
+            String(
+                value || ''
+            )
+                .trim()
+                .toLowerCase();
+
+        if (
+
+            normalizedValue === 'true' ||
+            normalizedValue === 'yes'
+
+        ) {
+
+            return true;
+
+        }
+
+        if (
+
+            normalizedValue === 'false' ||
+            normalizedValue === 'no'
+
+        ) {
+
+            return false;
+
+        }
+
+        return false;
 
     }
 
@@ -825,6 +1012,234 @@ export default class AiFormFillerChat
 
     }
 
+    normalizePromptBuilderClarificationOptions(options) {
+
+        if (
+
+            Array.isArray(
+                options
+            )
+
+        ) {
+
+            return options
+                .map(option => {
+
+                    if (
+
+                        typeof option === 'string'
+
+                    ) {
+
+                        const cleanedOption =
+                            this.stripClarificationOptionLabel(
+                                option
+                            );
+
+                        const matchedField =
+                            this.findBestFieldMatch(
+                                cleanedOption
+                            );
+
+                        if (
+
+                            matchedField
+
+                        ) {
+
+                            return {
+                                fieldId:
+                                    matchedField.id,
+                                label:
+                                    matchedField.label,
+                                value:
+                                    ''
+                            };
+
+                        }
+
+                        return {
+                            label:
+                                cleanedOption,
+                            value:
+                                cleanedOption
+                        };
+
+                    }
+
+                    const rawLabel =
+                        this.stripClarificationOptionLabel(
+                            option.label ||
+                            option.name ||
+                            option.value ||
+                            option.answer ||
+                            ''
+                        );
+
+                    const matchedField =
+                        option.fieldId ||
+                        option.questionId ||
+                        option.targetQuestionId
+                            ? null
+                            : this.findBestFieldMatch(
+                                rawLabel
+                            );
+
+                    if (
+
+                        matchedField
+
+                    ) {
+
+                        return {
+                            fieldId:
+                                matchedField.id,
+                            label:
+                                matchedField.label,
+                            value:
+                                ''
+                        };
+
+                    }
+
+                    return {
+                        fieldId:
+                            option.fieldId ||
+                            option.questionId ||
+                            option.targetQuestionId ||
+                            '',
+                        label:
+                            this.stripClarificationOptionLabel(
+                                rawLabel
+                            ),
+                        value:
+                            (
+                                option.fieldId ||
+                                option.questionId ||
+                                option.targetQuestionId
+                            )
+                                ? option.value || option.answer || ''
+                                : option.value ||
+                                    option.answer ||
+                                    this.stripClarificationOptionLabel(
+                                        option.label ||
+                                        option.name ||
+                                        ''
+                                    ) ||
+                                    ''
+                    };
+
+                })
+                .filter(option => {
+
+                    return option.label || option.value;
+
+                });
+
+        }
+
+        if (
+
+            typeof options === 'string' &&
+            options.trim()
+
+        ) {
+
+            const trimmedOptions =
+                options.trim();
+
+            if (
+
+                trimmedOptions.startsWith(
+                    '['
+                )
+
+            ) {
+
+                try {
+
+                    return this.normalizePromptBuilderClarificationOptions(
+                        JSON.parse(
+                            trimmedOptions
+                        )
+                    );
+
+                } catch (error) {
+
+                    // Fall through to comma parsing.
+
+                }
+
+            }
+
+            return trimmedOptions
+                .split(',')
+                .map(option => {
+
+                    const trimmedOption =
+                        this.stripClarificationOptionLabel(
+                            option.trim()
+                        );
+
+                    const matchedField =
+                        this.findBestFieldMatch(
+                            trimmedOption
+                        );
+
+                    if (
+
+                        matchedField
+
+                    ) {
+
+                        return {
+                            fieldId:
+                                matchedField.id,
+                            label:
+                                matchedField.label,
+                            value:
+                                ''
+                        };
+
+                    }
+
+                    return {
+                        label:
+                            trimmedOption,
+                        value:
+                            trimmedOption
+                    };
+
+                })
+                .filter(option => option.label);
+
+        }
+
+        return [];
+
+    }
+
+    stripClarificationOptionLabel(label) {
+
+        return String(
+            label || ''
+        )
+            .replace(
+                /\s*-\s*Q\d+(?:\.\d+)?\s*$/i,
+                ''
+            )
+            .replace(
+                /\s+Q\d+(?:\.\d+)?\s*$/i,
+                ''
+            )
+            .replace(
+                /^Q\d+(?:\.\d+)?\s+/i,
+                ''
+            )
+            .trim();
+
+    }
+
     normalizePromptBuilderAction(action) {
 
         if (
@@ -953,11 +1368,62 @@ export default class AiFormFillerChat
         return {
             type:
                 'clarify',
+            originalType:
+                command.type,
             fieldPhrase:
-                '',
+                broadTarget,
+            pendingValue:
+                command.value || '',
             value:
-                `I found more than one ${broadTarget}-related field. Which one should I update: ${candidates.join(', ')}?`
+                this.buildActionClarificationMessage(
+                    broadTarget,
+                    command.type
+                ),
+            clarificationOptions:
+                candidates.map(candidate => {
+
+                    return {
+                        fieldId:
+                            candidate.id,
+                        label:
+                            candidate.label,
+                        value:
+                            ''
+                    };
+
+                })
         };
+
+    }
+
+    buildActionClarificationMessage(target, commandType) {
+
+        const normalizedCommandType =
+            this.normalizePromptBuilderAction(
+                commandType || ''
+            );
+
+        if (
+
+            normalizedCommandType === 'clear'
+
+        ) {
+
+            return `Which ${target} field should I remove or clear?`;
+
+        }
+
+        if (
+
+            normalizedCommandType === 'replace'
+
+        ) {
+
+            return `Which ${target} field should I update?`;
+
+        }
+
+        return `Which ${target} field should I fill?`;
 
     }
 
@@ -1054,6 +1520,8 @@ export default class AiFormFillerChat
             ) {
 
                 candidates.push({
+                    id:
+                        field.id,
                     label:
                         field.label,
                     score:
@@ -1084,9 +1552,201 @@ export default class AiFormFillerChat
             })
             .slice(
                 0,
-                5
+                this.maxClarificationOptions
             )
-            .map(candidate => candidate.label);
+            .map(candidate => candidate);
+
+    }
+
+    buildFieldMatchClarification(
+
+        fieldPhrase,
+
+        commandType,
+
+        pendingValue,
+
+        prompt
+
+    ) {
+
+        const normalizedPhrase =
+            this.normalizeText(
+                fieldPhrase || prompt || ''
+            );
+
+        if (
+
+            !normalizedPhrase ||
+            this.hasExactFieldMatch(
+                normalizedPhrase
+            )
+
+        ) {
+
+            return null;
+
+        }
+
+        const candidates =
+            this.getFieldMatchCandidates(
+                normalizedPhrase
+            )
+                .filter(candidate => {
+
+                    return this.isAcceptableFieldMatch(
+                        normalizedPhrase,
+                        candidate.field,
+                        candidate.score,
+                        candidate.confidence
+                    );
+
+                })
+                .slice(
+                    0,
+                    this.maxClarificationOptions
+                );
+
+        if (
+
+            candidates.length < 2
+
+        ) {
+
+            return null;
+
+        }
+
+        const broadTarget =
+            this.extractBroadAmbiguousTarget(
+                prompt
+            );
+
+        const topCandidate =
+            candidates[0];
+
+        const secondCandidate =
+            candidates[1];
+
+        const similarConfidence =
+            topCandidate.score === secondCandidate.score ||
+            Math.abs(
+                topCandidate.confidence - secondCandidate.confidence
+            ) <= 0.15;
+
+        const shouldClarify =
+            !!broadTarget ||
+            similarConfidence ||
+            topCandidate.confidence < this.minimumSemanticConfidence;
+
+        if (
+
+            !shouldClarify
+
+        ) {
+
+            return null;
+
+        }
+
+        const targetText =
+            broadTarget || fieldPhrase || 'that request';
+
+        return {
+            reason:
+                'Multiple possible field matches were found with similar confidence.',
+            commandType:
+                commandType,
+            fieldPhrase:
+                fieldPhrase || '',
+            prompt:
+                prompt,
+            value:
+                pendingValue || '',
+            memoryKey:
+                this.buildClarificationMemoryKey(
+                    targetText
+                ),
+            message:
+                `I found more than one possible field for "${targetText}". Which one should I use?`,
+            options:
+                candidates.map(candidate => {
+
+                    return {
+                        fieldId:
+                            candidate.field.id,
+                        label:
+                            candidate.field.label,
+                        value:
+                            '',
+                        confidence:
+                            candidate.confidence
+                    };
+
+                })
+        };
+
+    }
+
+    hasExactFieldMatch(normalizedPhrase) {
+
+        return this.normalizedConfig.some(field => {
+
+            return normalizedPhrase === field.normalizedLabel ||
+                normalizedPhrase === field.normalizedId;
+
+        });
+
+    }
+
+    getFieldMatchCandidates(normalizedPhrase) {
+
+        return this.normalizedConfig
+            .map(field => {
+
+                const matchScore =
+                    this.fieldMatchScore(
+                        normalizedPhrase,
+                        field
+                    );
+
+                return {
+                    field:
+                        field,
+                    score:
+                        matchScore.score,
+                    confidence:
+                        matchScore.confidence
+                };
+
+            })
+            .filter(candidate => {
+
+                return candidate.score > 0 ||
+                    candidate.confidence > 0 ||
+                    candidate.field.normalizedLabel.includes(
+                        normalizedPhrase
+                    ) ||
+                    normalizedPhrase.includes(
+                        candidate.field.normalizedLabel
+                    );
+
+            })
+            .sort((first, second) => {
+
+                if (
+
+                    second.score !== first.score
+
+                ) {
+
+                    return second.score - first.score;
+
+                }
+
+                return second.confidence - first.confidence;
+
+            });
 
     }
 
@@ -1852,12 +2512,44 @@ export default class AiFormFillerChat
 
         ) {
 
-            this.pendingField =
-                command.fieldPhrase
-                    ? this.findBestFieldMatch(
-                        command.fieldPhrase
+            const normalizedIntendedType =
+                this.normalizePromptBuilderAction(
+                    command.originalType ||
+                    command.pendingAction ||
+                    command.intendedAction ||
+                    ''
+                );
+
+            const promptIntendedType =
+                this.hasClearIntent(
+                    normalizedPrompt
+                )
+                    ? 'clear'
+                    : this.hasFillIntent(
+                        normalizedPrompt
                     )
-                    : null;
+                        ? 'fill'
+                        : this.hasUpdateIntent(
+                            normalizedPrompt
+                        )
+                            ? 'replace'
+                            : '';
+
+            const intendedType =
+                promptIntendedType ||
+                (
+                    [
+                        'fill',
+                        'clear',
+                        'replace',
+                        'autofill'
+                    ].includes(
+                        normalizedIntendedType
+                    ) &&
+                    normalizedIntendedType !== 'autofill'
+                        ? normalizedIntendedType
+                        : 'fill'
+                );
 
             const clarificationMessage =
                 command.value ||
@@ -1867,16 +2559,187 @@ export default class AiFormFillerChat
                         : 'Please tell me the field name and the new value, for example: "Change preferred contact method to Email."'
                 );
 
+            const exactClarifiedField =
+                this.findExactFieldMatch(
+                    command.fieldPhrase
+                );
+
+            const broadClarificationTarget =
+                command.fieldPhrase ||
+                this.extractBroadAmbiguousTarget(
+                    prompt
+                ) ||
+                '';
+
+            const broadPromptTarget =
+                this.extractBroadAmbiguousTarget(
+                    prompt
+                );
+
+            const hasPromptFieldOptions =
+                command.clarificationOptions &&
+                command.clarificationOptions.some(option => {
+
+                    return !!option.fieldId;
+
+                });
+
+            const shouldUsePromptClarificationOptions =
+                command.clarificationOptions &&
+                command.clarificationOptions.length &&
+                !broadPromptTarget &&
+                (
+                    hasPromptFieldOptions ||
+                    !this.extractBroadAmbiguousTarget(
+                        prompt
+                    )
+                );
+
             if (
 
-                this.pendingField
+                exactClarifiedField
 
             ) {
 
-                this.showFieldAIMessage(
-                    this.pendingField.id,
+                if (
+
+                    intendedType === 'fill'
+
+                ) {
+
+                    if (
+
+                        command.pendingValue
+
+                    ) {
+
+                        await this.applyPromptBuilderFillValue(
+                            {
+                                ...command,
+                                type:
+                                    'fill',
+                                fieldPhrase:
+                                    exactClarifiedField.label,
+                                value:
+                                    command.pendingValue
+                            },
+                            prompt
+                        );
+
+                    } else {
+
+                        const filledFromPromptBuilder =
+                            await this.fillSingleFieldWithPromptBuilderFirst(
+                                exactClarifiedField,
+                                prompt
+                            );
+
+                        if (
+
+                            !filledFromPromptBuilder
+
+                        ) {
+
+                            await this.fillSingleFieldFromAI(
+                                exactClarifiedField.label,
+                                prompt,
+                                true
+                            );
+
+                        }
+
+                    }
+
+                    return;
+
+                }
+
+                await this.applyEditCommand(
+                    {
+                        type:
+                            intendedType,
+                        fieldPhrase:
+                            exactClarifiedField.label,
+                        value:
+                            command.pendingValue || ''
+                    },
+                    prompt
+                );
+
+                return;
+
+            }
+
+            if (
+
+                shouldUsePromptClarificationOptions
+
+            ) {
+
+                this.askClarification(
+                    {
+                        reason:
+                            'Multiple possible field matches were found with similar confidence.',
+                        commandType:
+                            intendedType,
+                        fieldPhrase:
+                            command.fieldPhrase || '',
+                        prompt:
+                            prompt,
+                        value:
+                            command.pendingValue || '',
+                        memoryKey:
+                            this.buildClarificationMemoryKey(
+                                command.fieldPhrase || prompt
+                            ),
+                        options:
+                            command.clarificationOptions.map(option => {
+
+                                return {
+                                    fieldId:
+                                        option.fieldId,
+                                    label:
+                                        option.label || option.value,
+                                    value:
+                                        option.fieldId
+                                            ? option.value || ''
+                                            : option.value || option.label
+                                };
+
+                            })
+                    },
                     clarificationMessage
                 );
+
+                return;
+
+            }
+
+            const fieldClarification =
+                this.buildFieldMatchClarification(
+                    broadClarificationTarget ||
+                    prompt,
+                    intendedType,
+                    command.pendingValue || '',
+                    prompt
+                );
+
+            if (
+
+                fieldClarification
+
+            ) {
+
+                this.askClarification(
+                    {
+                        ...fieldClarification,
+                        message:
+                            clarificationMessage || fieldClarification.message
+                    },
+                    clarificationMessage || fieldClarification.message
+                );
+
+                return;
 
             }
 
@@ -1912,10 +2775,71 @@ export default class AiFormFillerChat
 
             }
 
-            await this.fillSingleFieldFromAI(
-                command.fieldPhrase,
-                prompt
-            );
+            const field =
+                this.findFieldByPromptBuilderCommand(
+                    command
+                ) ||
+                this.findBestFieldMatch(
+                    command.fieldPhrase
+                );
+
+            if (
+
+                !field
+
+            ) {
+
+                this.addMessage(
+                    'I could not identify which field you want me to fill.',
+                    'assistant'
+                );
+
+                this.logChatDecisionSafely({
+                    action:
+                        'fill',
+                    status:
+                        'Failed',
+                    questionId:
+                        command.questionId,
+                    questionLabel:
+                        command.fieldPhrase,
+                    source:
+                        command.fromPromptBuilder
+                            ? 'Prompt Builder'
+                            : 'AI Form Chat',
+                    confidence:
+                        command.confidence,
+                    reason:
+                        'Fill command was understood, but no matching form field was found.',
+                    value:
+                        ''
+                });
+
+                this.pendingField = null;
+
+                return;
+
+            }
+
+            const filledFromPromptBuilder =
+                await this.fillSingleFieldWithPromptBuilderFirst(
+                    field,
+                    prompt
+                );
+
+            if (
+
+                !filledFromPromptBuilder
+
+            ) {
+
+                await this.fillSingleFieldFromAI(
+                    field.label,
+                    prompt,
+                    true
+                );
+
+            }
 
             this.pendingField = null;
 
@@ -1956,7 +2880,44 @@ export default class AiFormFillerChat
 
         }
 
+        const rememberedField =
+            this.getRememberedClarificationField(
+                command.fieldPhrase
+            );
+
+        if (
+
+            !rememberedField
+
+        ) {
+
+            const clarification =
+                this.buildFieldMatchClarification(
+                    command.fieldPhrase,
+                    command.type,
+                    command.value,
+                    prompt
+                );
+
+            if (
+
+                clarification
+
+            ) {
+
+                this.askClarification(
+                    clarification,
+                    clarification.message
+                );
+
+                return;
+
+            }
+
+        }
+
         const field =
+            rememberedField ||
             this.findBestFieldMatch(
                 command.fieldPhrase
             );
@@ -2020,6 +2981,25 @@ export default class AiFormFillerChat
                     field
                 );
 
+            this.logChatDecisionSafely({
+                action:
+                    command.type,
+                status:
+                    'Failed',
+                questionId:
+                    field.id,
+                questionLabel:
+                    field.label,
+                source:
+                    'AI Form Chat',
+                confidence:
+                    command.confidence,
+                reason:
+                    message,
+                value:
+                    value
+            });
+
             this.showFieldAIMessage(
                 field.id,
                 message
@@ -2075,6 +3055,27 @@ export default class AiFormFillerChat
             'assistant'
         );
 
+        await this.logChatDecisionSafely({
+            action:
+                command.type,
+            status:
+                'Success',
+            questionId:
+                field.id,
+            questionLabel:
+                field.label,
+            source:
+                'AI Form Chat',
+            confidence:
+                1,
+            reason:
+                'Updated from chat prompt.',
+            value:
+                value,
+            durationMs:
+                0
+        });
+
         this.pendingField = null;
 
         this.dispatchEvent(
@@ -2101,6 +3102,9 @@ export default class AiFormFillerChat
     ) {
 
         const field =
+            this.findFieldByPromptBuilderCommand(
+                command
+            ) ||
             this.findBestFieldMatch(
                 command.fieldPhrase
             );
@@ -2110,6 +3114,23 @@ export default class AiFormFillerChat
             !field
 
         ) {
+
+            this.logChatDecisionSafely({
+                action:
+                    'fill',
+                status:
+                    'Failed',
+                questionLabel:
+                    command.fieldPhrase,
+                source:
+                    'Prompt Builder',
+                confidence:
+                    command.confidence,
+                reason:
+                    'Prompt Builder returned a field value, but the chat could not match it to a form field.',
+                value:
+                    command.value
+            });
 
             await this.fillSingleFieldFromAI(
                 command.fieldPhrase,
@@ -2146,6 +3167,25 @@ export default class AiFormFillerChat
                     field
                 );
 
+            this.logChatDecisionSafely({
+                action:
+                    'fill',
+                status:
+                    'Failed',
+                questionId:
+                    field.id,
+                questionLabel:
+                    field.label,
+                source:
+                    'Prompt Builder',
+                confidence:
+                    command.confidence,
+                reason:
+                    message,
+                value:
+                    displayValue
+            });
+
             this.showFieldAIMessage(
                 field.id,
                 message
@@ -2177,16 +3217,11 @@ export default class AiFormFillerChat
 
         }
 
-        const controllerFieldData =
-            await this.getControllerFieldData(
-                field
-            );
-
         const sourceFields =
             command.sourceFields &&
             command.sourceFields.length
                 ? command.sourceFields
-                : controllerFieldData?.sourceFields || [];
+                : [];
 
         const filledData = {
             [field.id]: {
@@ -2196,6 +3231,8 @@ export default class AiFormFillerChat
                     command.confidence || 0.9,
                 reasoning:
                     'Prompt Builder understood the user command and returned this value.',
+                isMergedAnswer:
+                    command.isMergedAnswer === true,
                 sourceFields:
                     sourceFields
             }
@@ -2222,6 +3259,26 @@ export default class AiFormFillerChat
             'assistant'
         );
 
+        this.logChatDecisionSafely({
+            action:
+                'fill',
+            status:
+                'Success',
+            questionId:
+                field.id,
+            questionLabel:
+                field.label,
+            source:
+                'Prompt Builder',
+            confidence:
+                command.confidence || 0.9,
+            reason:
+                command.reasoning ||
+                'Prompt Builder understood the user command and returned this value.',
+            value:
+                displayValue
+        });
+
         this.dispatchEvent(
             new ShowToastEvent({
                 title: 'Field Filled',
@@ -2247,6 +3304,25 @@ export default class AiFormFillerChat
 
         }
 
+        const field =
+            this.questions.find(question => {
+
+                return question.id === questionId;
+
+            });
+
+        if (
+
+            this.isCheckboxLikeField(
+                field
+            )
+
+        ) {
+
+            return;
+
+        }
+
         this.dispatchEvent(
             new CustomEvent(
                 'fieldaimessage',
@@ -2258,6 +3334,547 @@ export default class AiFormFillerChat
                             message
                     }
                 }
+            )
+        );
+
+    }
+
+    isCheckboxLikeField(field) {
+
+        const fieldType =
+            String(
+                field?.type || ''
+            )
+                .toLowerCase()
+                .trim();
+
+        return fieldType === 'checkbox' ||
+            fieldType === 'check box' ||
+            fieldType === 'boolean';
+
+    }
+
+    askClarification(context, message) {
+
+        const normalizedPrompt =
+            this.normalizeText(
+                context.prompt || message || ''
+            );
+
+        const contextCommandType =
+            this.normalizePromptBuilderAction(
+                context.commandType || ''
+            );
+
+        const promptCommandType =
+            this.hasClearIntent(
+                normalizedPrompt
+            )
+                ? 'clear'
+                : this.hasFillIntent(
+                    normalizedPrompt
+                )
+                    ? 'fill'
+                    : this.hasUpdateIntent(
+                        normalizedPrompt
+                    )
+                        ? 'replace'
+                        : '';
+
+        const normalizedContextCommandType =
+            contextCommandType === 'autofill'
+                ? 'fill'
+                : contextCommandType;
+
+        const clarificationCommandType =
+            promptCommandType ||
+            (
+                [
+                    'fill',
+                    'clear',
+                    'replace'
+                ].includes(
+                    normalizedContextCommandType
+                )
+                    ? normalizedContextCommandType
+                    : 'fill'
+            );
+
+        const options =
+            (context.options || [])
+                .slice(
+                    0,
+                    this.maxClarificationOptions
+                )
+                .map((option, index) => {
+
+                    const isFieldChoice =
+                        option.fieldId &&
+                        !option.value;
+
+                    const cleanLabel =
+                        this.stripClarificationOptionLabel(
+                            option.label || ''
+                        )
+                            .replace(
+                                /^(autofill|clear|update)\s+/i,
+                                ''
+                            );
+
+                    const fieldChoiceLabelPrefix =
+                        clarificationCommandType === 'fill'
+                            ? 'Autofill'
+                            : clarificationCommandType === 'clear'
+                                ? 'Clear'
+                                : clarificationCommandType === 'replace'
+                                    ? 'Update'
+                                    : '';
+
+                    return {
+                        id:
+                            `clarification-${Date.now()}-${index}`,
+                        action:
+                            option.action || (
+                                clarificationCommandType === 'fill' &&
+                                isFieldChoice
+                                    ? 'autofill'
+                                    : clarificationCommandType
+                            ),
+                        fieldId:
+                            option.fieldId,
+                        label:
+                            isFieldChoice &&
+                            fieldChoiceLabelPrefix
+                                ? `${fieldChoiceLabelPrefix} ${cleanLabel}`
+                                : cleanLabel,
+                        value:
+                            option.value,
+                        confidence:
+                            option.confidence
+                    };
+
+                });
+
+        this.pendingClarification = {
+            ...context,
+            commandType:
+                clarificationCommandType,
+            options:
+                options
+        };
+
+        this.addMessage(
+            `${message} You can also type the answer manually if none of these are correct.`,
+            'assistant',
+            options
+        );
+
+        this.logChatDecisionSafely({
+            action:
+                'clarify',
+            status:
+                'Clarification',
+            questionLabel:
+                context.fieldPhrase,
+            source:
+                'AI Form Chat',
+            confidence:
+                context.confidence,
+            reason:
+                context.reason ||
+                message,
+            value:
+                options.map(option => option.label).join(', ')
+        });
+
+        // eslint-disable-next-line no-console
+        console.log(
+            'Clarification requested:',
+            JSON.stringify(
+                {
+                    reason:
+                        context.reason,
+                    prompt:
+                        context.prompt,
+                    options:
+                        options.map(option => option.label)
+                }
+            )
+        );
+
+    }
+
+    async handleClarificationOption(event) {
+
+        const optionId =
+            event.currentTarget.dataset.optionId;
+
+        const option =
+            this.pendingClarification?.options?.find(candidate => {
+
+                return candidate.id === optionId;
+
+            });
+
+        if (
+
+            !option ||
+            this.isProcessing
+
+        ) {
+
+            return;
+
+        }
+
+        this.addMessage(
+            option.label,
+            'user'
+        );
+
+        this.isProcessing = true;
+
+        try {
+
+            await this.applyClarificationChoice(
+                option
+            );
+
+        } catch (error) {
+
+            this.handleError(
+                error
+            );
+
+        } finally {
+
+            this.isProcessing = false;
+
+        }
+
+    }
+
+    async handleClarificationSelectionPrompt(prompt) {
+
+        if (
+
+            !this.pendingClarification
+
+        ) {
+
+            return false;
+
+        }
+
+        const normalizedPrompt =
+            this.normalizeText(
+                prompt
+            );
+
+        const option =
+            this.pendingClarification.options.find((candidate, index) => {
+
+                const normalizedLabel =
+                    this.normalizeText(
+                        candidate.label
+                    );
+
+                return normalizedPrompt === normalizedLabel ||
+                    normalizedPrompt.includes(
+                        normalizedLabel
+                    ) ||
+                    normalizedPrompt === String(
+                        index + 1
+                    );
+
+            });
+
+        if (
+
+            !option
+
+        ) {
+
+            return false;
+
+        }
+
+        await this.applyClarificationChoice(
+            option
+        );
+
+        return true;
+
+    }
+
+    async applyClarificationChoice(option) {
+
+        const clarification =
+            this.pendingClarification;
+
+        if (
+
+            !clarification
+
+        ) {
+
+            return;
+
+        }
+
+        const field =
+            option.fieldId
+                ? this.normalizedConfig.find(candidate => {
+
+                    return candidate.id === option.fieldId;
+
+                })
+                : this.findBestFieldMatch(
+                    clarification.fieldPhrase
+                );
+
+        if (
+
+            !field
+
+        ) {
+
+            this.pendingClarification = null;
+
+            this.addMessage(
+                'I could not find that field anymore. Please try the command again.',
+                'assistant'
+            );
+
+            return;
+
+        }
+
+        this.rememberClarificationChoice(
+            clarification.memoryKey,
+            field
+        );
+
+        this.logClarificationChoice(
+            clarification,
+            field
+        );
+
+        this.pendingClarification = null;
+
+        const selectedPrompt =
+            this.buildClarificationPromptForSelectedField(
+                clarification,
+                field,
+                option
+            );
+
+        if (
+
+            option.action === 'autofill'
+
+        ) {
+
+            const filledFromPromptBuilder =
+                await this.fillSingleFieldWithPromptBuilderFirst(
+                    field,
+                    selectedPrompt
+                );
+
+            if (
+
+                !filledFromPromptBuilder
+
+            ) {
+
+                await this.fillSingleFieldFromAI(
+                    field.label,
+                    selectedPrompt,
+                    true
+                );
+
+            }
+
+            return;
+
+        }
+
+        const selectedValue =
+            option.fieldId
+                ? clarification.value || ''
+                : option.value || clarification.value || '';
+
+        if (
+
+            clarification.commandType === 'fill' &&
+            !selectedValue
+
+        ) {
+
+            const filledFromPromptBuilder =
+                await this.fillSingleFieldWithPromptBuilderFirst(
+                    field,
+                    selectedPrompt
+                );
+
+            if (
+
+                !filledFromPromptBuilder
+
+            ) {
+
+                await this.fillSingleFieldFromAI(
+                    field.label,
+                    selectedPrompt,
+                    true
+                );
+
+            }
+
+            return;
+
+        }
+
+        await this.applyEditCommand(
+            {
+                type:
+                    selectedValue
+                        ? 'replace'
+                        : clarification.commandType,
+                fieldPhrase:
+                    field.label,
+                value:
+                    selectedValue
+            },
+            selectedPrompt
+        );
+
+    }
+
+    buildClarificationPromptForSelectedField(clarification, field, option) {
+
+        const commandType =
+            this.normalizePromptBuilderAction(
+                clarification.commandType || option.action || ''
+            );
+
+        const normalizedCommandType =
+            commandType === 'autofill'
+                ? 'fill'
+                : commandType;
+
+        const selectedValue =
+            option.fieldId
+                ? clarification.value || option.value || ''
+                : option.value || clarification.value || '';
+
+        if (
+
+            normalizedCommandType === 'clear'
+
+        ) {
+
+            return `clear ${field.label}`;
+
+        }
+
+        if (
+
+            normalizedCommandType === 'replace'
+
+        ) {
+
+            return selectedValue
+                ? `replace ${field.label} with ${selectedValue}`
+                : `update ${field.label}`;
+
+        }
+
+        return `fill ${field.label}`;
+
+    }
+
+    buildClarificationMemoryKey(fieldPhrase) {
+
+        return `field:${this.normalizeText(
+            fieldPhrase || ''
+        )}`;
+
+    }
+
+    getRememberedClarificationField(fieldPhrase) {
+
+        const fieldId =
+            this.clarificationMemory[
+                this.buildClarificationMemoryKey(
+                    fieldPhrase
+                )
+            ];
+
+        if (
+
+            !fieldId
+
+        ) {
+
+            return null;
+
+        }
+
+        return this.normalizedConfig.find(field => {
+
+            return field.id === fieldId;
+
+        }) || null;
+
+    }
+
+    rememberClarificationChoice(memoryKey, field) {
+
+        if (
+
+            !memoryKey ||
+            !field
+
+        ) {
+
+            return;
+
+        }
+
+        this.clarificationMemory = {
+            ...this.clarificationMemory,
+            [memoryKey]:
+                field.id
+        };
+
+    }
+
+    logClarificationChoice(clarification, field) {
+
+        const logEntry = {
+            prompt:
+                clarification.prompt,
+            reason:
+                clarification.reason,
+            selectedFieldId:
+                field.id,
+            selectedFieldLabel:
+                field.label,
+            selectedAt:
+                new Date().toISOString()
+        };
+
+        this.clarificationLog = [
+            ...this.clarificationLog,
+            logEntry
+        ];
+
+        // eslint-disable-next-line no-console
+        console.log(
+            'Clarification response:',
+            JSON.stringify(
+                logEntry
             )
         );
 
@@ -2279,7 +3896,29 @@ export default class AiFormFillerChat
         try {
 
             const result =
-                await fillFormWithAI();
+                await fillSingleFieldWithAI({
+                    questionId:
+                        field.id,
+                    questionLabel:
+                        field.label,
+                    questionType:
+                        field.type,
+                    picklistValues:
+                        this.isChoiceField(
+                            field
+                        )
+                            ? this.getFieldOptions(
+                                field
+                            )
+                                .map(
+                                    option =>
+                                        option.value || option.label
+                                )
+                                .join(
+                                    ','
+                                )
+                            : ''
+                });
 
             return result?.filledFields?.[field.id] || null;
 
@@ -2296,15 +3935,234 @@ export default class AiFormFillerChat
 
     }
 
+    buildPromptBuilderExistingValues(field, controllerFieldData) {
+
+        const existingValues = {
+            ...(this.formData || {})
+        };
+
+        if (
+
+            field &&
+            field.id &&
+            existingValues[field.id]
+
+        ) {
+
+            delete existingValues[field.id];
+
+        }
+
+        return existingValues;
+
+    }
+
+    buildPromptBuilderApplicantKnowledge(field, controllerFieldData) {
+
+        return '';
+
+    }
+
+    buildPromptFieldContextForField(field) {
+
+        if (
+
+            !field
+
+        ) {
+
+            return [];
+
+        }
+
+        return [
+            {
+                questionId:
+                    field.id,
+                label:
+                    field.label,
+                type:
+                    field.type,
+                options:
+                    this.isChoiceField(
+                        field
+                    )
+                        ? this.getFieldOptions(
+                            field
+                        )
+                        : []
+            }
+        ];
+
+    }
+
+    async fillSingleFieldWithPromptBuilderFirst(field, prompt) {
+
+        if (
+
+            !field
+
+        ) {
+
+            return false;
+
+        }
+
+        try {
+
+            const existingValues =
+                this.buildPromptBuilderExistingValues(
+                    field,
+                    null
+                );
+
+            const result =
+                await interpretPromptCommand({
+                    command:
+                        prompt || `fill ${field.label}`,
+                    fieldContextJson:
+                        JSON.stringify(
+                            this.buildPromptFieldContextForField(
+                                field
+                            )
+                        ),
+                    existingValuesJson:
+                        JSON.stringify(
+                            existingValues
+                        ),
+                    applicantKnowledge:
+                        this.buildPromptBuilderApplicantKnowledge(
+                            field,
+                            null
+                        )
+                });
+
+            if (
+
+                !result ||
+                result.handled !== true
+
+            ) {
+
+                return false;
+
+            }
+
+            const command =
+                this.normalizePromptBuilderCommand(
+                    result
+                );
+
+            if (
+
+                command &&
+                command.type === 'fill' &&
+                command.value
+
+            ) {
+
+                await this.applyPromptBuilderFillValue(
+                    {
+                        ...command,
+                        fieldPhrase:
+                            field.label
+                    },
+                    prompt
+                );
+
+                return true;
+
+            }
+
+            if (
+
+                command &&
+                command.type === 'clarify' &&
+                command.pendingValue
+
+            ) {
+
+                await this.applyPromptBuilderFillValue(
+                    {
+                        ...command,
+                        type:
+                            'fill',
+                        fieldPhrase:
+                            field.label,
+                        value:
+                            command.pendingValue
+                    },
+                    prompt
+                );
+
+                return true;
+
+            }
+
+        } catch (error) {
+
+            // Prompt Builder is the first choice, but the controller remains the fallback.
+            // eslint-disable-next-line no-console
+            console.warn(
+                'Prompt Builder selected-field fill skipped',
+                error
+            );
+
+        }
+
+        return false;
+
+    }
+
     async fillSingleFieldFromAI(
 
         fieldPhrase,
 
-        prompt
+        prompt,
+
+        skipClarification = false
 
     ) {
 
+        const rememberedField =
+            this.getRememberedClarificationField(
+                fieldPhrase
+            );
+
+        if (
+
+            !skipClarification &&
+            !rememberedField
+
+        ) {
+
+            const clarification =
+                this.buildFieldMatchClarification(
+                    fieldPhrase,
+                    'fill',
+                    '',
+                    prompt
+                );
+
+            if (
+
+                clarification
+
+            ) {
+
+                this.askClarification(
+                    clarification,
+                    clarification.message
+                );
+
+                return;
+
+            }
+
+        }
+
         const field =
+            rememberedField ||
             this.findBestFieldMatch(
                 fieldPhrase
             );
@@ -2325,13 +4183,29 @@ export default class AiFormFillerChat
         }
 
         const result =
-            await fillFormWithAI();
+            await fillSingleFieldWithAI({
+                questionId:
+                    field.id,
+                questionLabel:
+                    field.label,
+                questionType:
+                    field.type,
+                picklistValues:
+                    this.isChoiceField(field)
+                        ? this.getFieldOptions(field)
+                            .map(option => option.value || option.label)
+                            .join(',')
+                        : ''
+            });
 
         const filledData =
             result?.filledFields || {};
 
         const fieldData =
             filledData[field.id];
+
+        const fieldMessage =
+            result?.fieldMessages?.[field.id];
 
         if (
 
@@ -2348,6 +4222,45 @@ export default class AiFormFillerChat
 
             if (
 
+                fieldMessage
+
+            ) {
+
+                this.logChatDecisionSafely({
+                    action:
+                        'no_data',
+                    status:
+                        'No Data',
+                    questionId:
+                        field.id,
+                    questionLabel:
+                        field.label,
+                    source:
+                        'AI',
+                    confidence:
+                        fieldData?.confidence,
+                    reason:
+                        fieldMessage,
+                    value:
+                        fieldData?.value
+                });
+
+                this.showFieldAIMessage(
+                    field.id,
+                    fieldMessage
+                );
+
+                this.addMessage(
+                    fieldMessage,
+                    'assistant'
+                );
+
+                return;
+
+            }
+
+            if (
+
                 fieldData &&
                 !this.isValidValueForField(
                     fieldData.value,
@@ -2360,6 +4273,25 @@ export default class AiFormFillerChat
                     this.buildInvalidValueMessage(
                         field
                     );
+
+                this.logChatDecisionSafely({
+                    action:
+                        'fill',
+                    status:
+                        'Failed',
+                    questionId:
+                        field.id,
+                    questionLabel:
+                        field.label,
+                    source:
+                        'AI',
+                    confidence:
+                        fieldData.confidence,
+                    reason:
+                        message,
+                    value:
+                        fieldData.value
+                });
 
                 this.showFieldAIMessage(
                     field.id,
@@ -2375,8 +4307,37 @@ export default class AiFormFillerChat
 
             }
 
+            const noDataMessage =
+                this.buildNoDataMessageForField(
+                    field
+                );
+
+            this.logChatDecisionSafely({
+                action:
+                    'no_data',
+                status:
+                    'No Data',
+                questionId:
+                    field.id,
+                questionLabel:
+                    field.label,
+                source:
+                    'AI',
+                confidence:
+                    fieldData?.confidence,
+                reason:
+                    noDataMessage,
+                value:
+                    fieldData?.value
+            });
+
+            this.showFieldAIMessage(
+                field.id,
+                noDataMessage
+            );
+
             this.addMessage(
-                `I could not find a reliable AI value for ${field.label}. Please type the value you want.`,
+                noDataMessage,
                 'assistant'
             );
 
@@ -2409,6 +4370,13 @@ export default class AiFormFillerChat
                             result.metadata,
                         aiComparisonResults:
                             result.aiComparisonResults,
+                        fieldMessages:
+                            fieldMessage
+                                ? {
+                                    [field.id]:
+                                        fieldMessage
+                                }
+                                : {},
                         confidence:
                             result.overallConfidence,
                         prompt:
@@ -2422,6 +4390,26 @@ export default class AiFormFillerChat
             `Done. I filled ${field.label} from AI.`,
             'assistant'
         );
+
+        this.logChatDecisionSafely({
+            action:
+                'fill',
+            status:
+                'Success',
+            questionId:
+                field.id,
+            questionLabel:
+                field.label,
+            source:
+                'AI',
+            confidence:
+                formattedFieldData.confidence,
+            reason:
+                formattedFieldData.reasoning ||
+                'Filled by controller fallback after chat command.',
+            value:
+                formattedFieldData.value
+        });
 
         this.dispatchEvent(
             new ShowToastEvent({
@@ -2442,6 +4430,68 @@ export default class AiFormFillerChat
             );
 
         return match?.field || null;
+
+    }
+
+    findExactFieldMatch(fieldPhrase) {
+
+        const normalizedPhrase =
+            this.normalizeText(
+                fieldPhrase
+            );
+
+        if (
+
+            !normalizedPhrase
+
+        ) {
+
+            return null;
+
+        }
+
+        return this.normalizedConfig.find(field => {
+
+            return normalizedPhrase === field.normalizedLabel ||
+                normalizedPhrase === field.normalizedId;
+
+        }) || null;
+
+    }
+
+    findFieldByPromptBuilderCommand(command) {
+
+        const normalizedQuestionId =
+            this.normalizeText(
+                command?.questionId ||
+                command?.targetQuestionId ||
+                ''
+            );
+
+        if (
+            normalizedQuestionId
+        ) {
+
+            const idMatch =
+                this.normalizedConfig.find(field => {
+
+                    return normalizedQuestionId === field.normalizedId;
+
+                });
+
+            if (
+                idMatch
+            ) {
+
+                return idMatch;
+
+            }
+
+        }
+
+        return this.findExactFieldMatch(
+            command?.fieldPhrase
+        );
 
     }
 
@@ -3185,7 +5235,9 @@ export default class AiFormFillerChat
         }
 
         const matchingOption =
-            field.options.find(option => {
+            this.getFieldOptions(
+                field
+            ).find(option => {
 
                 return this.normalizeText(
                     option.label
@@ -3211,11 +5263,9 @@ export default class AiFormFillerChat
     ) {
 
         const options =
-            Array.isArray(
-                field?.options
-            )
-                ? field.options
-                : [];
+            this.getFieldOptions(
+                field || {}
+            );
 
         const normalizedValue =
             this.normalizeText(
@@ -3341,21 +5391,7 @@ export default class AiFormFillerChat
 
     ) {
 
-        if (
-
-            !this.isContactInformationField(
-                field
-            )
-
-        ) {
-
-            return value;
-
-        }
-
-        return this.formatContactInformationValue(
-            value
-        );
+        return value;
 
     }
 
@@ -3403,19 +5439,6 @@ export default class AiFormFillerChat
 
             lowerValue.includes(
                 'you can reach me by'
-            ) ||
-            (
-                lowerValue.startsWith(
-                    'my mailing address is'
-                ) &&
-                (
-                    lowerValue.includes(
-                        'phone at'
-                    ) ||
-                    lowerValue.includes(
-                        'email at'
-                    )
-                )
             )
 
         ) {
@@ -3623,7 +5646,12 @@ export default class AiFormFillerChat
 
         }
 
-        switch (field.type) {
+        const type =
+            String(
+                field.type || ''
+            ).toLowerCase();
+
+        switch (type) {
             case 'date':
                 return this.isValidDateValue(
                     value
@@ -3643,8 +5671,13 @@ export default class AiFormFillerChat
             case 'picklist':
             case 'dropdown':
             case 'radio':
-                return field.options.length === 0 ||
-                    field.options.some(option => {
+                const options =
+                    this.getFieldOptions(
+                        field
+                    );
+
+                return options.length === 0 ||
+                    options.some(option => {
 
                         return option.value === value ||
                             option.label === value;
@@ -3723,7 +5756,9 @@ export default class AiFormFillerChat
             'dropdown',
             'radio'
         ].includes(
-            field?.type
+            String(
+                field?.type || ''
+            ).toLowerCase()
         );
 
     }
@@ -3732,7 +5767,9 @@ export default class AiFormFillerChat
 
         if (
 
-            field.type === 'date'
+            String(
+                field.type || ''
+            ).toLowerCase() === 'date'
 
         ) {
 
@@ -3742,7 +5779,9 @@ export default class AiFormFillerChat
 
         if (
 
-            field.type === 'number'
+            String(
+                field.type || ''
+            ).toLowerCase() === 'number'
 
         ) {
 
@@ -3752,7 +5791,9 @@ export default class AiFormFillerChat
 
         if (
 
-            field.type === 'email'
+            String(
+                field.type || ''
+            ).toLowerCase() === 'email'
 
         ) {
 
@@ -3762,7 +5803,9 @@ export default class AiFormFillerChat
 
         if (
 
-            field.type === 'phone'
+            String(
+                field.type || ''
+            ).toLowerCase() === 'phone'
 
         ) {
 
@@ -3773,9 +5816,13 @@ export default class AiFormFillerChat
         if (
 
             ['picklist', 'dropdown', 'radio'].includes(
-                field.type
+                String(
+                    field.type || ''
+                ).toLowerCase()
             ) &&
-            field.options.length > 0
+            this.getFieldOptions(
+                field
+            ).length > 0
 
         ) {
 
@@ -3784,6 +5831,85 @@ export default class AiFormFillerChat
         }
 
         return `That value does not look valid for ${field.label}.`;
+
+    }
+
+    buildNoDataMessageForField(field) {
+
+        const location =
+            this.suggestMissingDataLocation(
+                field
+            );
+
+        return `No saved data found for ${field.label}. Please enter it manually. You can add it under ${location} in Salesforce for future use.`;
+
+    }
+
+    suggestMissingDataLocation(field) {
+
+        const fingerprint =
+            this.normalizeText(
+                `${field?.label || ''} ${field?.type || ''}`
+            );
+
+        if (
+
+            [
+                'contact',
+                'email',
+                'phone',
+                'mobile',
+                'address',
+                'street',
+                'city',
+                'state',
+                'province',
+                'postal',
+                'zip',
+                'birth',
+                'gender',
+                'citizen'
+            ].some((term) => fingerprint.includes(term))
+
+        ) {
+
+            return 'Contact Info';
+
+        }
+
+        if (
+
+            [
+                'name',
+                'profile',
+                'user'
+            ].some((term) => fingerprint.includes(term))
+
+        ) {
+
+            return 'your profile';
+
+        }
+
+        if (
+
+            [
+                'program',
+                'education',
+                'institution',
+                'degree',
+                'term',
+                'enrollment',
+                'study'
+            ].some((term) => fingerprint.includes(term))
+
+        ) {
+
+            return 'the related application or education record';
+
+        }
+
+        return 'Applicant Knowledge or the related Salesforce record';
 
     }
 
@@ -3958,7 +6084,9 @@ export default class AiFormFillerChat
             );
 
         const matchingOptions =
-            field.options
+            this.getFieldOptions(
+                field
+            )
                 .map(option => {
 
                     const normalizedLabel =
@@ -4788,7 +6916,9 @@ export default class AiFormFillerChat
 
         text,
 
-        type
+        type,
+
+        options = []
 
     ) {
 
@@ -4802,23 +6932,463 @@ export default class AiFormFillerChat
                 text:
                     text,
                 cssClass:
-                    `message ${type}`
+                    `message ${type}`,
+                options:
+                    options,
+                hasOptions:
+                    Array.isArray(
+                        options
+                    ) &&
+                    options.length > 0
             }
         ];
 
     }
 
+    logFilledDataDecisions(filledData, action, status, prompt) {
+
+        Object.keys(
+            filledData || {}
+        ).forEach(fieldId => {
+
+            const field =
+                this.normalizedConfig.find(candidate => {
+
+                    return candidate.id === fieldId;
+
+                });
+
+            const fieldData =
+                filledData[fieldId] || {};
+
+            this.logChatDecisionSafely({
+                action:
+                    action,
+                status:
+                    status,
+                questionId:
+                    fieldId,
+                questionLabel:
+                    field?.label,
+                source:
+                    this.buildLogSource(
+                        fieldData
+                    ),
+                confidence:
+                    fieldData.confidence,
+                reason:
+                    fieldData.reasoning ||
+                    `Filled from chat prompt: ${prompt || ''}`,
+                value:
+                    fieldData.value
+            });
+
+        });
+
+    }
+
+    logFieldMessageDecisions(fieldMessages, status, prompt) {
+
+        Object.keys(
+            fieldMessages || {}
+        ).forEach(fieldId => {
+
+            const field =
+                this.normalizedConfig.find(candidate => {
+
+                    return candidate.id === fieldId;
+
+                });
+
+            this.logChatDecisionSafely({
+                action:
+                    status === 'No Data'
+                        ? 'no_data'
+                        : 'skip',
+                status:
+                    status,
+                questionId:
+                    fieldId,
+                questionLabel:
+                    field?.label,
+                source:
+                    'AI',
+                reason:
+                    fieldMessages[fieldId] ||
+                    `No data returned for chat prompt: ${prompt || ''}`
+            });
+
+        });
+
+    }
+
+    logChatDecisionSafely(detail = {}) {
+
+        return logChatDecision({
+            action:
+                this.normalizeLogAction(
+                    detail.action
+                ),
+            status:
+                this.normalizeLogStatus(
+                    detail.status
+                ),
+            questionId:
+                detail.questionId || '',
+            questionLabel:
+                detail.questionLabel || '',
+            source:
+                detail.source || 'AI Form Chat',
+            confidence:
+                detail.confidence === undefined || detail.confidence === null
+                    ? null
+                    : detail.confidence,
+            reason:
+                detail.reason || '',
+            value:
+                detail.value === undefined || detail.value === null
+                    ? ''
+                    : String(
+                        detail.value
+                    ),
+            durationMs:
+                detail.durationMs === undefined || detail.durationMs === null
+                    ? null
+                    : detail.durationMs,
+            formSubmissionId:
+                detail.formSubmissionId || this.submissionId || null
+        }).catch(error => {
+
+            // Logging should never block form filling or chat commands.
+            // eslint-disable-next-line no-console
+            console.warn(
+                'AI form chat logging skipped',
+                error?.body?.message || error?.message || error
+            );
+
+        });
+
+    }
+
+    normalizeLogAction(action) {
+
+        const rawAction =
+            this.normalizeText(
+                action || ''
+            )
+                .replace(
+                    /\s+/g,
+                    '_'
+                );
+
+        if (
+            rawAction === 'no_data'
+        ) {
+            return 'no_data';
+        }
+
+        const normalized =
+            this.normalizePromptBuilderAction(
+                action || ''
+            );
+
+        if (
+            [
+                'fill',
+                'clear',
+                'replace',
+                'clarify',
+                'skip',
+                'no_data'
+            ].includes(
+                normalized
+            )
+        ) {
+            return normalized;
+        }
+
+        if (
+            normalized === 'autofill'
+        ) {
+            return 'fill';
+        }
+
+        return 'fill';
+
+    }
+
+    normalizeLogStatus(status) {
+
+        const normalized =
+            this.normalizeText(
+                status || ''
+            );
+
+        if (
+            normalized === 'success'
+        ) {
+            return 'Success';
+        }
+
+        if (
+            normalized === 'failed' ||
+            normalized === 'failure' ||
+            normalized === 'error'
+        ) {
+            return 'Failed';
+        }
+
+        if (
+            normalized === 'skipped' ||
+            normalized === 'skip'
+        ) {
+            return 'Skipped';
+        }
+
+        if (
+            normalized === 'no data' ||
+            normalized === 'no_data'
+        ) {
+            return 'No Data';
+        }
+
+        if (
+            normalized === 'clarification' ||
+            normalized === 'clarify'
+        ) {
+            return 'Clarification';
+        }
+
+        return 'Success';
+
+    }
+
+    buildLogSource(fieldData) {
+
+        if (
+            fieldData?.sourceFields &&
+            fieldData.sourceFields.length
+        ) {
+            return fieldData.sourceFields.join(', ');
+        }
+
+        return fieldData?.source || 'AI';
+
+    }
+
+    extractErrorMessage(error) {
+
+        if (
+
+            !error
+
+        ) {
+
+            return '';
+
+        }
+
+        if (
+
+            typeof error === 'string'
+
+        ) {
+
+            return error;
+
+        }
+
+        const messages = [];
+
+        const addMessage = value => {
+
+            if (
+
+                value
+
+            ) {
+
+                messages.push(
+                    String(
+                        value
+                    )
+                );
+
+            }
+
+        };
+
+        addMessage(
+            error?.body?.message
+        );
+
+        addMessage(
+            error?.message
+        );
+
+        if (
+
+            Array.isArray(
+                error?.body
+            )
+
+        ) {
+
+            error.body.forEach(item => {
+
+                addMessage(
+                    item?.message
+                );
+
+            });
+
+        }
+
+        if (
+
+            Array.isArray(
+                error?.body?.pageErrors
+            )
+
+        ) {
+
+            error.body.pageErrors.forEach(item => {
+
+                addMessage(
+                    item?.message
+                );
+
+            });
+
+        }
+
+        if (
+
+            error?.body?.fieldErrors
+
+        ) {
+
+            Object.values(
+                error.body.fieldErrors
+            ).forEach(items => {
+
+                if (
+
+                    Array.isArray(
+                        items
+                    )
+
+                ) {
+
+                    items.forEach(item => {
+
+                        addMessage(
+                            item?.message
+                        );
+
+                    });
+
+                }
+
+            });
+
+        }
+
+        if (
+
+            Array.isArray(
+                error?.body?.output?.errors
+            )
+
+        ) {
+
+            error.body.output.errors.forEach(item => {
+
+                addMessage(
+                    item?.message
+                );
+
+            });
+
+        }
+
+        if (
+
+            error?.body?.output?.fieldErrors
+
+        ) {
+
+            Object.values(
+                error.body.output.fieldErrors
+            ).forEach(items => {
+
+                if (
+
+                    Array.isArray(
+                        items
+                    )
+
+                ) {
+
+                    items.forEach(item => {
+
+                        addMessage(
+                            item?.message
+                        );
+
+                    });
+
+                }
+
+            });
+
+        }
+
+        const usefulMessage =
+            messages.find(message => {
+
+                const normalizedMessage =
+                    this.normalizeText(
+                        message
+                    );
+
+                return normalizedMessage &&
+                    normalizedMessage !== 'failed to get error from response';
+
+            });
+
+        return usefulMessage || '';
+
+    }
+
     handleError(error) {
 
-        const message =
-            error?.body?.message ||
-            error?.message ||
+        const rawMessage =
+            this.extractErrorMessage(
+                error
+            ) ||
             'Something went wrong while filling the form.';
+
+        const message =
+            this.normalizeErrorMessage(
+                rawMessage
+            );
 
         this.addMessage(
             message,
             'assistant'
         );
+
+        this.logChatDecisionSafely({
+            action:
+                'skip',
+            status:
+                'Failed',
+            source:
+                'AI Form Chat',
+            reason:
+                message
+        });
 
         this.dispatchEvent(
             new ShowToastEvent({
@@ -4827,6 +7397,41 @@ export default class AiFormFillerChat
                 variant: 'error'
             })
         );
+
+    }
+
+    normalizeErrorMessage(message) {
+
+        const text =
+            message
+                ? String(
+                    message
+                )
+                : '';
+
+        const lower =
+            this.normalizeText(
+                text
+            );
+
+        if (
+            lower.includes(
+                'failed to get error from response'
+            )
+        ) {
+            return 'I could not complete that chat command. Please try the field label again, or use Fill with AI.';
+        }
+
+        if (
+            lower.includes(
+                'apex request is invalid'
+            )
+        ) {
+            return 'I could not reach the AI service for this request. Please check the Prompt Builder app configuration, then try again.';
+        }
+
+        return text ||
+            'Something went wrong while filling the form.';
 
     }
 

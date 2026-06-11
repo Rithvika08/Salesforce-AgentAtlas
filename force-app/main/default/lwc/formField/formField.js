@@ -71,7 +71,8 @@ export default class FormField
 
     get hasSourceFields() {
 
-        return this.sourceFields.length > 1;
+        return this.fieldConfig?.isMergedAnswer === true &&
+            this.sourceFields.length > 1;
 
     }
 
@@ -169,6 +170,88 @@ export default class FormField
     get sourceFieldsLabel() {
 
         return 'Fields merged';
+
+    }
+
+    get hasAIConfidence() {
+
+        return this.normalizedAIConfidence !== null;
+
+    }
+
+    get normalizedAIConfidence() {
+
+        const rawConfidence =
+            this.fieldConfig?.aiConfidence;
+
+        if (
+
+            rawConfidence === null ||
+            rawConfidence === undefined ||
+            rawConfidence === ''
+
+        ) {
+
+            return null;
+
+        }
+
+        const confidence =
+            Number(
+                rawConfidence
+            );
+
+        if (
+
+            Number.isNaN(
+                confidence
+            )
+
+        ) {
+
+            return null;
+
+        }
+
+        if (
+
+            confidence <= 1
+
+        ) {
+
+            return Math.max(
+                0,
+                Math.min(
+                    100,
+                    Math.round(
+                        confidence * 100
+                    )
+                )
+            );
+
+        }
+
+        return Math.max(
+            0,
+            Math.min(
+                100,
+                Math.round(
+                    confidence
+                )
+            )
+        );
+
+    }
+
+    get confidencePercent() {
+
+        return `${this.normalizedAIConfidence}%`;
+
+    }
+
+    get confidenceTooltip() {
+
+        return `AI confidence: ${this.confidencePercent}`;
 
     }
 

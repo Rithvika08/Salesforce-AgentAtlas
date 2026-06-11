@@ -37,7 +37,7 @@ export default class AiFormFillerButton
 
     showOptions = true;
 
-    fillScope = 'fill-current';
+    fillScope = 'fill-all';
 
     // LOAD
 
@@ -71,26 +71,16 @@ export default class AiFormFillerButton
 
         try {
 
-            // STEP 1
-
             this.processingMessage =
-                'Gathering previous application data...';
-
-            await this.sleep(500);
-
-            // STEP 2
+                'Gathering data...';
 
             const result =
                 await fillFormWithAI();
-
-            // STEP 3
 
             this.processingMessage =
                 'AI is filling your form...';
 
             await this.processResults(result);
-
-            // STEP 4
 
             this.showCompletionMessage(result);
 
@@ -116,16 +106,31 @@ export default class AiFormFillerButton
 
     async processResults(result) {
 
+        const normalizedResult =
+            this.normalizeFillResult(
+                result
+            );
+
         const filledData =
-            result?.filledFields || {};
+            normalizedResult.filledFields;
+
+        const scopedFilledData =
+            this.filterResultByScope(
+                filledData
+            );
+
+        const scopedFieldMessages =
+            this.filterResultByScope(
+                normalizedResult.fieldMessages
+            );
 
         this.filledFieldsCount =
 
-            Object.keys(filledData).length;
+            Object.keys(scopedFilledData).length;
 
         this.sourceBreakdown =
             this.buildSourceBreakdown(
-                filledData
+                scopedFilledData
             );
 
         // SEND DATA TO PARENT
@@ -140,13 +145,16 @@ export default class AiFormFillerButton
                     detail: {
 
                         filledData:
-                            filledData,
+                            scopedFilledData,
 
                         metadata:
                             result.metadata,
 
                         aiComparisonResults:
                             result.aiComparisonResults,
+
+                        fieldMessages:
+                            scopedFieldMessages,
 
                         confidence:
                             result.overallConfidence
@@ -160,34 +168,210 @@ export default class AiFormFillerButton
         this.dispatchEvent(fillEvent);
       //  System.debug(('fillEvent-->'+fillEvent));
 
-        // VISUAL EFFECT
+    }
 
-        await this.animateFieldFilling(
-            filledData
-        );
+    normalizeFillResult(result) {
+
+        const filledFields = {
+
+            ...(result?.filledFields || {})
+
+        };
+
+        const fieldMessages = {
+
+            ...(result?.fieldMessages || {})
+
+        };
+
+        Object.keys(
+            fieldMessages
+        ).forEach(questionId => {
+
+            const fieldValue =
+                filledFields[questionId]?.value;
+
+            if (
+
+                this.isBlankValue(
+                    fieldValue
+                )
+
+            ) {
+
+                delete filledFields[questionId];
+
+            }
+
+        });
+
+        return {
+            filledFields,
+            fieldMessages
+        };
 
     }
 
-    // ANIMATION
+    isBlankValue(value) {
 
-    async animateFieldFilling(filledData) {
+        return value === '' ||
+            value === null ||
+            value === undefined ||
+            String(value).trim() === '';
 
-        let count = 0;
+    }
 
-        const interval = 100;
+    filterResultByScope(resultByQuestionId) {
 
-        for (const fieldId in filledData) {
+        if (
 
-            count++;
+            !resultByQuestionId ||
+            typeof resultByQuestionId !== 'object'
 
-            this.processingMessage =
+        ) {
 
-                `Filling field ${count}
-                 of ${this.filledFieldsCount}...`;
-
-            await this.sleep(interval);
+            return {};
 
         }
+
+        return Object.keys(resultByQuestionId).reduce((filtered, questionId) => {
+
+            if (
+
+                this.shouldIncludeQuestionForScope(
+                    questionId
+                )
+
+            ) {
+
+                filtered[questionId] =
+                    resultByQuestionId[questionId];
+
+            }
+
+            return filtered;
+
+        }, {});
+
+    }
+
+    shouldIncludeQuestionForScope(questionId) {
+
+        const field =
+            this.findQuestionConfig(
+                questionId
+            );
+
+        if (
+
+            this.fillScope === 'fill-current' &&
+            !this.isQuestionOnCurrentPage(
+                field
+            )
+
+        ) {
+
+            return false;
+
+        }
+
+        if (
+
+            this.fillScope === 'fill-empty' &&
+            this.hasExistingValue(
+                questionId
+            )
+
+        ) {
+
+            return false;
+
+        }
+
+        return true;
+
+    }
+
+    findQuestionConfig(questionId) {
+
+        if (
+
+            !Array.isArray(
+                this.formConfig
+            )
+
+        ) {
+
+            return null;
+
+        }
+
+        return this.formConfig.find(config => {
+
+            return config.id === questionId ||
+                config.Question_Id__c === questionId ||
+                config.questionId === questionId;
+
+        }) || null;
+
+    }
+
+    isQuestionOnCurrentPage(field) {
+
+        if (
+
+            !field ||
+            this.currentPage === undefined ||
+            this.currentPage === null
+
+        ) {
+
+            return true;
+
+        }
+
+        const fieldPage =
+            field.page ||
+            field.Page_Number__c ||
+            field.pageNumber;
+
+        return String(fieldPage) ===
+            String(this.currentPage);
+
+    }
+
+    hasExistingValue(questionId) {
+
+        const value =
+            this.formData?.[questionId];
+
+        if (
+
+            Array.isArray(
+                value
+            )
+
+        ) {
+
+            return value.length > 0;
+
+        }
+
+        if (
+
+            value === true ||
+            value === false ||
+            value === 0
+
+        ) {
+
+            return true;
+
+        }
+
+        return String(
+            value || ''
+        ).trim() !== '';
 
     }
 
@@ -217,6 +401,18 @@ export default class AiFormFillerButton
 
             `${this.filledFieldsCount}
              fields filled automatically.`;
+
+        if (
+
+            result.hasWarnings &&
+            result.unfillableFields
+
+        ) {
+
+            message +=
+                ` ${result.unfillableFields} field(s) need manual input.`;
+
+        }
 
         this.dispatchEvent(
 
@@ -545,19 +741,6 @@ export default class AiFormFillerButton
                 variant: 'error'
 
             })
-
-        );
-
-    }
-
-    // DELAY
-
-    sleep(ms) {
-
-        return new Promise(
-
-            resolve =>
-                setTimeout(resolve, ms)
 
         );
 
