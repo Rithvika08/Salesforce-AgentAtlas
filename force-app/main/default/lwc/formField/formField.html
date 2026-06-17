@@ -2,15 +2,6 @@
 
     <div class="slds-form-element">
 
-        <template if:true={hasAIConfidence}>
-
-            <span
-                class="ai-confidence-indicator"
-                title={confidenceTooltip}
-                aria-label={confidenceTooltip}>i</span>
-
-        </template>
-
         <!-- PICKLIST -->
 
         <template if:true={isPicklist}>
@@ -103,6 +94,74 @@
                 class="input-node">
 
             </lightning-input>
+
+        </template>
+
+        <template if:true={hasAIExplanation}>
+
+            <div class="ai-confidence-row">
+
+                <button
+                    type="button"
+                    class="ai-confidence-indicator"
+                    title={confidenceTooltip}
+                    aria-label={confidenceTooltip}
+                    onclick={toggleExplanation}>i</button>
+
+                <section
+                    class={explanationPanelClass}>
+
+                    <div class="ai-explanation-title">
+
+                        Why this value was chosen
+
+                    </div>
+
+                    <p>
+
+                        {explanationLeadText}
+
+                    </p>
+
+                    <dl class="ai-explanation-details">
+
+                        <dt>Source field(s)</dt>
+                        <dd>{explanationSourceText}</dd>
+
+                        <dt>Confidence level</dt>
+                        <dd>{confidencePercent}</dd>
+
+                        <dt>Reasoning</dt>
+                        <dd>{explanationReasoning}</dd>
+
+                        <dt>Alternative options considered</dt>
+                        <dd>
+
+                            <template
+                                for:each={explanationAlternativeOptions}
+                                for:item="alternative">
+
+                                <div key={alternative.id}>
+
+                                    {alternative.text}
+
+                                </div>
+
+                            </template>
+
+                        </dd>
+
+                        <dt>Source data timestamp</dt>
+                        <dd>{explanationSourceUpdatedAt}</dd>
+
+                        <dt>Mapping type</dt>
+                        <dd>{explanationSelectionType}</dd>
+
+                    </dl>
+
+                </section>
+
+            </div>
 
         </template>
 

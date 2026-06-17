@@ -158,6 +158,41 @@ export default class Dynamicformpage extends LightningElement {
                         field.Question_Id__c
                     ]?.confidence,
 
+                aiReasoning:
+
+                    this.formData[
+                        field.id ||
+                        field.Question_Id__c
+                    ]?.reasoning,
+
+                aiSelectionType:
+
+                    this.formData[
+                        field.id ||
+                        field.Question_Id__c
+                    ]?.selectionType,
+
+                aiSourceUpdatedAt:
+
+                    this.formData[
+                        field.id ||
+                        field.Question_Id__c
+                    ]?.sourceUpdatedAt,
+
+                aiAlternativeOptions:
+
+                    this.formData[
+                        field.id ||
+                        field.Question_Id__c
+                    ]?.alternativeOptions,
+
+                aiRawSourceFields:
+
+                    this.formData[
+                        field.id ||
+                        field.Question_Id__c
+                    ]?.sourceFields,
+
                 sourceFieldsText:
 
                     this.sanitizeSourceFieldsText(

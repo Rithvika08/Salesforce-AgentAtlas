@@ -49,6 +49,16 @@ public with sharing class UserDataDiscoveryService {
         @AuraEnabled
         public String noDataMessage;
 
+        @AuraEnabled
+        public String sourceUpdatedAt;
+
+        @AuraEnabled
+        public String selectionType;
+
+        @AuraEnabled
+        public List<String> alternativeOptions =
+            new List<String>();
+
     }
 
     private class SemanticAnswer {
@@ -149,7 +159,8 @@ public with sharing class UserDataDiscoveryService {
                 State,
                 PostalCode,
                 Country,
-                ContactId
+                ContactId,
+                LastModifiedDate
 
             FROM User
 
@@ -183,7 +194,8 @@ public with sharing class UserDataDiscoveryService {
                     MailingState,
                     MailingPostalCode,
                     MailingCountry,
-                    Applicant_Knowledge__c
+                    Applicant_Knowledge__c,
+                    LastModifiedDate
 
                 FROM Contact
 
@@ -2176,6 +2188,12 @@ public with sharing class UserDataDiscoveryService {
                         'No valid faculty advisor name found; clearing stale invalid value';
 
                 }
+
+                addExplanationMetadata(
+                    res,
+                    usr,
+                    con
+                );
 
                 results.put(
                     q.questionId,
@@ -9650,6 +9668,185 @@ public with sharing class UserDataDiscoveryService {
             return null;
 
         }
+
+    }
+
+    private static void addExplanationMetadata(
+
+        DataDiscoveryResult result,
+
+        User usr,
+
+        Contact con
+
+    ) {
+
+        if (
+
+            result == null
+
+        ) {
+
+            return;
+
+        }
+
+        result.selectionType =
+            result.isMergedAnswer == true ||
+            (
+                result.sourceFields != null &&
+                result.sourceFields.size() > 1
+            )
+                ? 'Synthesized from multiple saved fields'
+                : 'Direct mapping from saved data';
+
+        result.sourceUpdatedAt =
+            findLatestSourceTimestamp(
+                result.sourceFields,
+                usr,
+                con
+            );
+
+        if (
+
+            result.alternativeOptions == null
+
+        ) {
+
+            result.alternativeOptions =
+                new List<String>();
+
+        }
+
+        if (
+
+            result.alternativeOptions.isEmpty()
+
+        ) {
+
+            result.alternativeOptions.add(
+                'No stronger saved-data alternative was found.'
+            );
+
+        }
+
+    }
+
+    private static String findLatestSourceTimestamp(
+
+        List<String> sourceFields,
+
+        User usr,
+
+        Contact con
+
+    ) {
+
+        Datetime latestTimestamp;
+
+        if (
+
+            sourceFields == null ||
+            sourceFields.isEmpty()
+
+        ) {
+
+            latestTimestamp =
+                newerDatetime(
+                    usr == null ? null : usr.LastModifiedDate,
+                    con == null ? null : con.LastModifiedDate
+                );
+
+        }
+
+        else {
+
+            for (
+
+                String sourceField
+                : sourceFields
+
+            ) {
+
+                String normalizedSource =
+                    String.valueOf(
+                        sourceField
+                    )
+                        .toLowerCase();
+
+                if (
+
+                    normalizedSource.contains(
+                        'contact.'
+                    )
+
+                ) {
+
+                    latestTimestamp =
+                        newerDatetime(
+                            latestTimestamp,
+                            con == null ? null : con.LastModifiedDate
+                        );
+
+                }
+
+                if (
+
+                    normalizedSource.contains(
+                        'user.'
+                    )
+
+                ) {
+
+                    latestTimestamp =
+                        newerDatetime(
+                            latestTimestamp,
+                            usr == null ? null : usr.LastModifiedDate
+                        );
+
+                }
+
+            }
+
+        }
+
+        return latestTimestamp == null
+            ? null
+            : latestTimestamp.format();
+
+    }
+
+    private static Datetime newerDatetime(
+
+        Datetime firstValue,
+
+        Datetime secondValue
+
+    ) {
+
+        if (
+
+            firstValue == null
+
+        ) {
+
+            return secondValue;
+
+        }
+
+        if (
+
+            secondValue == null
+
+        ) {
+
+            return firstValue;
+
+        }
+
+        return secondValue.getTime() > firstValue.getTime()
+            ? secondValue
+            : firstValue;
 
     }
 

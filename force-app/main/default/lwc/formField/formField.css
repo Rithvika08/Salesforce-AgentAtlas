@@ -36,8 +36,6 @@ lightning-helptext {
 
     position: relative;
 
-    padding-right: 1.25rem;
-
 }
 
 .source-fields-used {
@@ -52,9 +50,21 @@ lightning-helptext {
 
 }
 
+.ai-confidence-row {
+
+    line-height: 1;
+
+    margin-top: 0.2rem;
+
+    position: relative;
+
+}
+
 .ai-confidence-indicator {
 
     align-items: center;
+
+    border: 0;
 
     background: #706e6b;
 
@@ -62,7 +72,7 @@ lightning-helptext {
 
     color: #fff;
 
-    cursor: help;
+    cursor: pointer;
 
     display: inline-flex;
 
@@ -76,15 +86,90 @@ lightning-helptext {
 
     line-height: 1;
 
-    position: absolute;
-
-    right: 0;
-
-    top: 1.9rem;
-
     width: 0.85rem;
 
-    z-index: 1;
+}
+
+.ai-explanation-panel {
+
+    background: #fff;
+
+    border: 1px solid #d8dde6;
+
+    border-radius: 0.35rem;
+
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.16);
+
+    color: #181818;
+
+    display: none;
+
+    font-size: 0.75rem;
+
+    left: 1.2rem;
+
+    line-height: 1.35;
+
+    max-width: 24rem;
+
+    min-width: 18rem;
+
+    padding: 0.75rem;
+
+    position: absolute;
+
+    top: 0;
+
+    white-space: normal;
+
+    z-index: 5;
+
+}
+
+.ai-confidence-row:hover .ai-explanation-panel,
+.ai-explanation-panel.is-open {
+
+    display: block;
+
+}
+
+.ai-explanation-title {
+
+    font-weight: 700;
+
+    margin-bottom: 0.4rem;
+
+}
+
+.ai-explanation-panel p {
+
+    margin: 0 0 0.5rem;
+
+}
+
+.ai-explanation-details {
+
+    display: grid;
+
+    gap: 0.25rem 0.6rem;
+
+    grid-template-columns: max-content 1fr;
+
+    margin: 0;
+
+}
+
+.ai-explanation-details dt {
+
+    color: #444;
+
+    font-weight: 700;
+
+}
+
+.ai-explanation-details dd {
+
+    margin: 0;
 
 }
 

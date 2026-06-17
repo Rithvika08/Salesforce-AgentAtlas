@@ -331,7 +331,18 @@ public without sharing class AIFormFillerController {
                             result.isMergedAnswer,
 
                         'sourceFields' =>
-                            result.sourceFields
+                            result.sourceFields,
+
+                        'sourceUpdatedAt' =>
+                            result.sourceUpdatedAt,
+
+                        'selectionType' =>
+                            result.selectionType,
+
+                        'alternativeOptions' =>
+                            result.alternativeOptions == null
+                                ? new List<String>()
+                                : result.alternativeOptions
 
                     }
 
@@ -834,6 +845,9 @@ public without sharing class AIFormFillerController {
                 'reasoning' => null,
                 'isMergedAnswer' => false,
                 'sourceFields' => new List<String>(),
+                'sourceUpdatedAt' => null,
+                'selectionType' => null,
+                'alternativeOptions' => new List<String>(),
                 'noDataFound' => false,
                 'noDataMessage' => null
             };
@@ -855,6 +869,14 @@ public without sharing class AIFormFillerController {
                 result.sourceFields == null
                     ? new List<String>()
                     : result.sourceFields,
+            'sourceUpdatedAt' =>
+                result.sourceUpdatedAt,
+            'selectionType' =>
+                result.selectionType,
+            'alternativeOptions' =>
+                result.alternativeOptions == null
+                    ? new List<String>()
+                    : result.alternativeOptions,
             'noDataFound' =>
                 result.noDataFound,
             'noDataMessage' =>
@@ -907,9 +929,8 @@ public without sharing class AIFormFillerController {
         entry.reason =
             result == null
                 ? null
-                : buildLogReason(
-                    result.reasoning,
-                    result.sourceFields
+                : buildAuditReason(
+                    result
                 );
 
         entry.value =
@@ -1106,6 +1127,101 @@ public without sharing class AIFormFillerController {
 
     }
 
+    private static String buildAuditReason(
+
+        UserDataDiscoveryService.DataDiscoveryResult result
+
+    ) {
+
+        if (
+
+            result == null
+
+        ) {
+
+            return null;
+
+        }
+
+        List<String> parts =
+            new List<String>();
+
+        String baseReason =
+            buildLogReason(
+                result.reasoning,
+                result.sourceFields
+            );
+
+        if (
+
+            !String.isBlank(
+                baseReason
+            )
+
+        ) {
+
+            parts.add(
+                baseReason
+            );
+
+        }
+
+        if (
+
+            !String.isBlank(
+                result.selectionType
+            )
+
+        ) {
+
+            parts.add(
+                'Selection type: ' +
+                result.selectionType
+            );
+
+        }
+
+        if (
+
+            !String.isBlank(
+                result.sourceUpdatedAt
+            )
+
+        ) {
+
+            parts.add(
+                'Source data timestamp: ' +
+                result.sourceUpdatedAt
+            );
+
+        }
+
+        if (
+
+            result.alternativeOptions != null &&
+            !result.alternativeOptions.isEmpty()
+
+        ) {
+
+            parts.add(
+                'Alternatives considered: ' +
+                String.join(
+                    result.alternativeOptions,
+                    '; '
+                )
+            );
+
+        }
+
+        return parts.isEmpty()
+            ? null
+            : String.join(
+                parts,
+                '\n'
+            );
+
+    }
+
     private static Long elapsedMs(
 
         Long operationStartMs
@@ -1242,6 +1358,9 @@ public without sharing class AIFormFillerController {
                 'reasoning' => null,
                 'isMergedAnswer' => false,
                 'sourceFields' => new List<String>(),
+                'sourceUpdatedAt' => null,
+                'selectionType' => null,
+                'alternativeOptions' => new List<String>(),
                 'noDataFound' => false,
                 'noDataMessage' => null
             };
@@ -1263,6 +1382,14 @@ public without sharing class AIFormFillerController {
                 result.sourceFields == null
                     ? new List<String>()
                     : result.sourceFields,
+            'sourceUpdatedAt' =>
+                result.sourceUpdatedAt,
+            'selectionType' =>
+                result.selectionType,
+            'alternativeOptions' =>
+                result.alternativeOptions == null
+                    ? new List<String>()
+                    : result.alternativeOptions,
             'noDataFound' =>
                 result.noDataFound,
             'noDataMessage' =>
@@ -1488,7 +1615,77 @@ public without sharing class AIFormFillerController {
         if (
 
             existingResult == null ||
-            fallbackResult == null ||
+            fallbackResult == null
+
+        ) {
+
+            return;
+
+        }
+
+        if (
+
+            String.isBlank(
+                existingResult.sourceUpdatedAt
+            )
+
+        ) {
+
+            existingResult.sourceUpdatedAt =
+                fallbackResult.sourceUpdatedAt;
+
+        }
+
+        if (
+
+            String.isBlank(
+                existingResult.selectionType
+            )
+
+        ) {
+
+            existingResult.selectionType =
+                fallbackResult.selectionType;
+
+        }
+
+        if (
+
+            (
+                existingResult.alternativeOptions == null ||
+                existingResult.alternativeOptions.isEmpty()
+            ) &&
+            fallbackResult.alternativeOptions != null
+
+        ) {
+
+            existingResult.alternativeOptions =
+                new List<String>(
+                    fallbackResult.alternativeOptions
+                );
+
+        }
+
+        if (
+
+            (
+                existingResult.sourceFields == null ||
+                existingResult.sourceFields.isEmpty()
+            ) &&
+            fallbackResult.sourceFields != null &&
+            !fallbackResult.sourceFields.isEmpty()
+
+        ) {
+
+            existingResult.sourceFields =
+                new List<String>(
+                    fallbackResult.sourceFields
+                );
+
+        }
+
+        if (
+
             fallbackResult.isMergedAnswer != true ||
             fallbackResult.sourceFields == null ||
             fallbackResult.sourceFields.size() < 2

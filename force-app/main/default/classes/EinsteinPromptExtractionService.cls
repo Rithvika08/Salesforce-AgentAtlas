@@ -306,6 +306,11 @@ public without sharing class EinsteinPromptExtractionService {
                         }
                     );
 
+                applyPromptExplanationMetadata(
+                    result,
+                    parsed
+                );
+
                 return result;
 
             }
@@ -384,6 +389,11 @@ public without sharing class EinsteinPromptExtractionService {
 
             result.sourceFields.addAll(
                 sourceFields
+            );
+
+            applyPromptExplanationMetadata(
+                result,
+                parsed
             );
 
             return result;
@@ -850,6 +860,11 @@ public without sharing class EinsteinPromptExtractionService {
                     )
                 );
 
+                applyPromptExplanationMetadata(
+                    result,
+                    answer
+                );
+
                 results.put(
                     questionId,
                     result
@@ -942,6 +957,11 @@ public without sharing class EinsteinPromptExtractionService {
 
             result.sourceFields.addAll(
                 sourceFields
+            );
+
+            applyPromptExplanationMetadata(
+                result,
+                answer
             );
 
             results.put(
@@ -1294,6 +1314,234 @@ public without sharing class EinsteinPromptExtractionService {
         }
 
         return sourceFields;
+
+    }
+
+    private static void applyPromptExplanationMetadata(
+
+        UserDataDiscoveryService.DataDiscoveryResult result,
+
+        Map<String, Object> parsed
+
+    ) {
+
+        if (
+
+            result == null ||
+            parsed == null
+
+        ) {
+
+            return;
+
+        }
+
+        result.sourceUpdatedAt =
+            firstStringValue(
+                parsed,
+                new List<String>{
+                    'sourceUpdatedAt',
+                    'sourceLastModifiedDate',
+                    'sourceTimestamp',
+                    'lastUpdatedAt',
+                    'lastModifiedDate'
+                }
+            );
+
+        result.selectionType =
+            firstStringValue(
+                parsed,
+                new List<String>{
+                    'selectionType',
+                    'mappingType',
+                    'answerType'
+                }
+            );
+
+        if (
+
+            String.isBlank(
+                result.selectionType
+            )
+
+        ) {
+
+            result.selectionType =
+                result.isMergedAnswer == true ||
+                (
+                    result.sourceFields != null &&
+                    result.sourceFields.size() > 1
+                )
+                    ? 'Synthesized from multiple saved fields'
+                    : 'Direct mapping from saved data';
+
+        }
+
+        result.alternativeOptions =
+            parseStringList(
+                firstNonNullValue(
+                    parsed,
+                    new List<String>{
+                        'alternativeOptions',
+                        'alternativesConsidered',
+                        'alternatives',
+                        'otherOptions'
+                    }
+                )
+            );
+
+        if (
+
+            result.alternativeOptions.isEmpty()
+
+        ) {
+
+            result.alternativeOptions.add(
+                'No stronger saved-data alternative was found.'
+            );
+
+        }
+
+    }
+
+    private static Object firstNonNullValue(
+
+        Map<String, Object> values,
+
+        List<String> keys
+
+    ) {
+
+        if (
+
+            values == null
+
+        ) {
+
+            return null;
+
+        }
+
+        for (
+
+            String key
+            : keys
+
+        ) {
+
+            if (
+
+                values.containsKey(
+                    key
+                ) &&
+                values.get(
+                    key
+                ) != null
+
+            ) {
+
+                return values.get(
+                    key
+                );
+
+            }
+
+        }
+
+        return null;
+
+    }
+
+    private static List<String> parseStringList(
+
+        Object rawValues
+
+    ) {
+
+        List<String> values =
+            new List<String>();
+
+        if (
+
+            rawValues instanceof List<Object>
+
+        ) {
+
+            for (
+
+                Object rawValue
+                : (List<Object>) rawValues
+
+            ) {
+
+                addStringValue(
+                    values,
+                    String.valueOf(
+                        rawValue
+                    )
+                );
+
+            }
+
+            return values;
+
+        }
+
+        if (
+
+            rawValues != null
+
+        ) {
+
+            addStringValue(
+                values,
+                String.valueOf(
+                    rawValues
+                )
+            );
+
+        }
+
+        return values;
+
+    }
+
+    private static void addStringValue(
+
+        List<String> values,
+
+        String value
+
+    ) {
+
+        if (
+
+            String.isBlank(
+                value
+            )
+
+        ) {
+
+            return;
+
+        }
+
+        String cleanedValue =
+            value.trim();
+
+        if (
+
+            !values.contains(
+                cleanedValue
+            )
+
+        ) {
+
+            values.add(
+                cleanedValue
+            );
+
+        }
 
     }
 

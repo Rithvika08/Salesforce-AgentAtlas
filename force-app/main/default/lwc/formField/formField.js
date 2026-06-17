@@ -8,6 +8,8 @@ export default class FormField
 
     @api currentValue;
 
+    isExplanationOpen = false;
+
     // PICKLIST
 
     get isPicklist() {
@@ -175,7 +177,19 @@ export default class FormField
 
     get hasAIConfidence() {
 
-        return this.normalizedAIConfidence !== null;
+        return !this.isCheckbox &&
+            !this.isBlankValue(
+                this.currentValue
+            ) &&
+            this.normalizedAIConfidence !== null;
+
+    }
+
+    isBlankValue(value) {
+
+        return value === null ||
+            value === undefined ||
+            value === '';
 
     }
 
@@ -245,13 +259,222 @@ export default class FormField
 
     get confidencePercent() {
 
-        return `${this.normalizedAIConfidence}%`;
+        return this.normalizedAIConfidence === null
+            ? 'Not available'
+            : `${this.normalizedAIConfidence}%`;
 
     }
 
     get confidenceTooltip() {
 
-        return `AI confidence: ${this.confidencePercent}`;
+        return this.explanationSummary;
+
+    }
+
+    get hasAIExplanation() {
+
+        return !this.isCheckbox &&
+            !this.isBlankValue(
+                this.currentValue
+            ) &&
+            (
+                this.normalizedAIConfidence !== null ||
+                !!this.fieldConfig?.aiReasoning ||
+                this.explanationSourceFields.length > 0
+            );
+
+    }
+
+    get explanationSummary() {
+
+        return [
+            `Confidence: ${this.confidencePercent}`,
+            `Source: ${this.explanationSourceText}`,
+            `Reason: ${this.explanationReasoning}`
+        ]
+            .filter(item => !item.endsWith(': '))
+            .join(' | ');
+
+    }
+
+    get explanationSourceFields() {
+
+        const rawSourceFields =
+            this.fieldConfig?.aiRawSourceFields;
+
+        if (
+
+            Array.isArray(
+                rawSourceFields
+            ) &&
+            rawSourceFields.length
+
+        ) {
+
+            return rawSourceFields
+                .map(sourceField => this.formatSourceField(sourceField))
+                .filter(sourceField => !!sourceField);
+
+        }
+
+        if (
+
+            this.sourceFields.length
+
+        ) {
+
+            return this.sourceFields
+                .map(sourceField => this.formatSourceField(sourceField))
+                .filter(sourceField => !!sourceField);
+
+        }
+
+        return [];
+
+    }
+
+    get explanationSourceText() {
+
+        return this.explanationSourceFields.length
+            ? this.explanationSourceFields.join(', ')
+            : 'Saved Salesforce data';
+
+    }
+
+    get explanationLeadText() {
+
+        if (
+
+            this.normalizedAIConfidence === null
+
+        ) {
+
+            return `Used ${this.explanationSourceText}. Confidence was not available.`;
+
+        }
+
+        return `Used ${this.explanationSourceText} with ${this.confidencePercent} confidence.`;
+
+    }
+
+    get explanationReasoning() {
+
+        return this.toPlainSentence(
+            this.fieldConfig?.aiReasoning ||
+            'The value matched what this question is asking for.'
+        );
+
+    }
+
+    get explanationSelectionType() {
+
+        return this.fieldConfig?.aiSelectionType ||
+            (
+                this.fieldConfig?.isMergedAnswer === true
+                    ? 'Synthesized from multiple saved fields'
+                    : 'Direct mapping from saved data'
+            );
+
+    }
+
+    get explanationSourceUpdatedAt() {
+
+        return this.fieldConfig?.aiSourceUpdatedAt ||
+            'Timestamp not available';
+
+    }
+
+    get explanationAlternativeOptions() {
+
+        const alternatives =
+            this.fieldConfig?.aiAlternativeOptions;
+
+        if (
+
+            Array.isArray(
+                alternatives
+            ) &&
+            alternatives.length
+
+        ) {
+
+            return alternatives.map((alternative, index) => {
+
+                return {
+                    id:
+                        `${index}-${alternative}`,
+                    text:
+                        alternative
+                };
+
+            });
+
+        }
+
+        return [
+            {
+                id:
+                    'default-alternative',
+                text:
+                    'No stronger saved-data alternative was found.'
+            }
+        ];
+
+    }
+
+    get explanationPanelClass() {
+
+        return this.isExplanationOpen
+            ? 'ai-explanation-panel is-open'
+            : 'ai-explanation-panel';
+
+    }
+
+    formatSourceField(sourceField) {
+
+        return String(
+            sourceField || ''
+        )
+            .replace(/__c$/g, '')
+            .replace(/_/g, ' ')
+            .replace(/\./g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+
+    }
+
+    toPlainSentence(value) {
+
+        const text =
+            String(
+                value || ''
+            )
+                .replace(/\s*\|\s*/g, '. ')
+                .replace(/\s+/g, ' ')
+                .trim();
+
+        if (
+
+            !text
+
+        ) {
+
+            return '';
+
+        }
+
+        return text.endsWith('.') ||
+            text.endsWith('!') ||
+            text.endsWith('?')
+            ? text
+            : `${text}.`;
+
+    }
+
+    toggleExplanation() {
+
+        this.isExplanationOpen =
+            !this.isExplanationOpen;
 
     }
 
