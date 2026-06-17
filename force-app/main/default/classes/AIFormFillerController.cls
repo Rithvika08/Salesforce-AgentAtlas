@@ -57,6 +57,51 @@ public without sharing class AIFormFillerController {
     public static Map<String, Object>
     fillFormWithAI() {
 
+        return fillFormWithAIForConfig(null);
+
+    }
+
+    @AuraEnabled
+    public static Map<String, Object>
+    fillFormWithAIForObject(String configObjectApiName) {
+
+        return fillFormWithAIForConfig(
+            configObjectApiName,
+            null
+        );
+
+    }
+
+    @AuraEnabled
+    public static Map<String, Object>
+    fillFormWithAIForObjectAndContact(
+        String configObjectApiName,
+        Id contextContactId
+    ) {
+
+        return fillFormWithAIForConfig(
+            configObjectApiName,
+            contextContactId
+        );
+
+    }
+
+    private static Map<String, Object>
+    fillFormWithAIForConfig(String configObjectApiName) {
+
+        return fillFormWithAIForConfig(
+            configObjectApiName,
+            null
+        );
+
+    }
+
+    private static Map<String, Object>
+    fillFormWithAIForConfig(
+        String configObjectApiName,
+        Id contextContactId
+    ) {
+
         try {
 
         Long operationStartMs =
@@ -90,42 +135,30 @@ public without sharing class AIFormFillerController {
             questions =
                 new List<UserDataDiscoveryService.FormQuestion>();
 
-        /*
-         * LOAD QUESTIONS FROM METADATA
-         */
-
         for (
 
-            Form_Configuration_c__mdt q :
-
-            [
-
-                SELECT
-                    Question_Id__c,
-                    MasterLabel,
-                    Question_Type__c,
-                    Picklist_Values__c,
-                    Display_Order__c
-
-                FROM Form_Configuration_c__mdt
-
-                ORDER BY Display_Order__c ASC
-
-            ]
+            Map<String, Object> q :
+            AcademicFormController.loadFormConfigurationForObject(
+                configObjectApiName
+            )
 
         ) {
 
             if (
 
                 String.isBlank(
-                    q.Question_Id__c
+                    valueAsString(
+                        q.get('Question_Id__c')
+                    )
                 )
 
             ) {
 
                 System.debug(
                     'Skipping form configuration with blank Question_Id__c: ' +
-                    q.MasterLabel
+                    valueAsString(
+                        q.get('MasterLabel')
+                    )
                 );
 
                 continue;
@@ -136,16 +169,24 @@ public without sharing class AIFormFillerController {
                 new UserDataDiscoveryService.FormQuestion();
 
             question.questionId =
-                q.Question_Id__c;
+                valueAsString(
+                    q.get('Question_Id__c')
+                );
 
             question.questionText =
-                q.MasterLabel;
+                valueAsString(
+                    q.get('MasterLabel')
+                );
 
             question.questionType =
-                q.Question_Type__c;
+                valueAsString(
+                    q.get('Question_Type__c')
+                );
 
             question.picklistValues =
-                q.Picklist_Values__c;
+                valueAsString(
+                    q.get('Picklist_Values__c')
+                );
 
             questions.add(question);
 
@@ -164,7 +205,8 @@ public without sharing class AIFormFillerController {
             einsteinPromptResults =
                 EinsteinPromptExtractionService.extractAnswers(
                     UserInfo.getUserId(),
-                    questions
+                    questions,
+                    contextContactId
                 );
 
         }
@@ -193,7 +235,8 @@ public without sharing class AIFormFillerController {
             userDiscoveryResults =
                 UserDataDiscoveryService.discoverDataForForm(
                     UserInfo.getUserId(),
-                    questions
+                    questions,
+                    contextContactId
                 );
 
         for (
@@ -217,9 +260,7 @@ public without sharing class AIFormFillerController {
                         existingResult.recommendedValue
                     ) ||
 
-                    existingResult.clearValue == true ||
-
-                    existingResult.noDataFound == true
+                    existingResult.clearValue == true
 
                 );
 
@@ -539,6 +580,32 @@ public without sharing class AIFormFillerController {
 
     ) {
 
+        return fillSingleFieldWithAIForContact(
+            questionId,
+            questionLabel,
+            questionType,
+            picklistValues,
+            null
+        );
+
+    }
+
+    @AuraEnabled
+    public static Map<String, Object>
+    fillSingleFieldWithAIForContact(
+
+        String questionId,
+
+        String questionLabel,
+
+        String questionType,
+
+        String picklistValues,
+
+        Id contextContactId
+
+    ) {
+
         try {
 
             Long operationStartMs =
@@ -582,10 +649,11 @@ public without sharing class AIFormFillerController {
             try {
 
                 einsteinPromptResults =
-                    EinsteinPromptExtractionService.extractAnswers(
-                        UserInfo.getUserId(),
-                        questions
-                    );
+                EinsteinPromptExtractionService.extractAnswers(
+                    UserInfo.getUserId(),
+                    questions,
+                    contextContactId
+                );
 
             }
 
@@ -601,10 +669,11 @@ public without sharing class AIFormFillerController {
 
             Map<String, UserDataDiscoveryService.DataDiscoveryResult>
                 userDiscoveryResults =
-                    UserDataDiscoveryService.discoverDataForForm(
-                        UserInfo.getUserId(),
-                        questions
-                    );
+                UserDataDiscoveryService.discoverDataForForm(
+                    UserInfo.getUserId(),
+                    questions,
+                    contextContactId
+                );
 
             Map<String, UserDataDiscoveryService.DataDiscoveryResult>
                 discoveryResults =
@@ -626,8 +695,7 @@ public without sharing class AIFormFillerController {
                     !String.isBlank(
                         promptResult.recommendedValue
                     ) ||
-                    promptResult.clearValue == true ||
-                    promptResult.noDataFound == true
+                    promptResult.clearValue == true
                 );
 
             if (
@@ -2410,6 +2478,14 @@ public without sharing class AIFormFillerController {
         }
 
         return options;
+
+    }
+
+    private static String valueAsString(Object value) {
+
+        return value == null
+            ? null
+            : String.valueOf(value);
 
     }
 

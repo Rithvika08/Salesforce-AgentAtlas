@@ -156,15 +156,450 @@ public without sharing class AcademicFormController {
         return result;
     
     }
+
+    @AuraEnabled
+    public static List<Map<String, Object>>
+    loadFormConfigurationForObject(String configObjectApiName) {
+
+        if (
+            String.isBlank(configObjectApiName) ||
+            configObjectApiName == 'Form_Configuration_c__mdt'
+        ) {
+
+            return loadFormConfiguration();
+
+        }
+
+        String normalizedConfigObjectApiName =
+            configObjectApiName.trim();
+
+        if (
+            !normalizedConfigObjectApiName.endsWith('__mdt') ||
+            normalizedConfigObjectApiName.replaceAll(
+                '[A-Za-z0-9_]',
+                ''
+            ).length() > 0 ||
+            !Schema.getGlobalDescribe().containsKey(
+                normalizedConfigObjectApiName
+            )
+        ) {
+
+            throw new AuraHandledException(
+                'Form configuration metadata type not found: ' +
+                normalizedConfigObjectApiName
+            );
+
+        }
+
+        Map<String, Schema.SObjectField> fields =
+            Schema.getGlobalDescribe()
+                .get(normalizedConfigObjectApiName)
+                .getDescribe()
+                .fields
+                .getMap();
+
+        String questionIdField =
+            firstExistingField(
+                fields,
+                new List<String>{
+                    'Question_Id__c',
+                    'QuestionId__c',
+                    'Question_ID__c',
+                    'Field_Id__c',
+                    'DeveloperName'
+                }
+            );
+
+        String labelField =
+            firstExistingField(
+                fields,
+                new List<String>{
+                    'MasterLabel',
+                    'Question_Label__c',
+                    'Question_Text__c',
+                    'Question__c',
+                    'Label__c',
+                    'Field_Label__c'
+                }
+            );
+
+        String typeField =
+            firstExistingField(
+                fields,
+                new List<String>{
+                    'Question_Type__c',
+                    'Type__c',
+                    'Field_Type__c',
+                    'Input_Type__c'
+                }
+            );
+
+        String pageField =
+            firstExistingField(
+                fields,
+                new List<String>{
+                    'Page_Number__c',
+                    'Page__c',
+                    'Step_Number__c',
+                    'Section_Number__c'
+                }
+            );
+
+        String displayOrderField =
+            firstExistingField(
+                fields,
+                new List<String>{
+                    'Display_Order__c',
+                    'Order__c',
+                    'Sort_Order__c',
+                    'Sequence__c'
+                }
+            );
+
+        String requiredField =
+            firstExistingField(
+                fields,
+                new List<String>{
+                    'Is_Required__c',
+                    'Required__c'
+                }
+            );
+
+        String helpTextField =
+            firstExistingField(
+                fields,
+                new List<String>{
+                    'Help_Text__c',
+                    'HelpText__c',
+                    'Description__c'
+                }
+            );
+
+        String validationRuleField =
+            firstExistingField(
+                fields,
+                new List<String>{
+                    'Validation_Rule__c',
+                    'ValidationRegex__c',
+                    'Validation_Regex__c'
+                }
+            );
+
+        String picklistValuesField =
+            firstExistingField(
+                fields,
+                new List<String>{
+                    'Picklist_Values__c',
+                    'Options__c',
+                    'Values__c'
+                }
+            );
+
+        Set<String> selectFields =
+            new Set<String>{
+                'MasterLabel',
+                'DeveloperName'
+            };
+
+        for (
+            String fieldName :
+            new List<String>{
+                questionIdField,
+                labelField,
+                typeField,
+                pageField,
+                displayOrderField,
+                requiredField,
+                helpTextField,
+                validationRuleField,
+                picklistValuesField
+            }
+        ) {
+
+            if (
+                !String.isBlank(fieldName) &&
+                fields.containsKey(fieldName)
+            ) {
+
+                selectFields.add(fieldName);
+
+            }
+
+        }
+
+        List<String> orderedSelectFields =
+            new List<String>(selectFields);
+
+        orderedSelectFields.sort();
+
+        String query =
+            'SELECT ' +
+            String.join(
+                orderedSelectFields,
+                ', '
+            ) +
+            ' FROM ' +
+            normalizedConfigObjectApiName;
+
+        List<String> orderByFields =
+            new List<String>();
+
+        if (!String.isBlank(pageField)) {
+            orderByFields.add(pageField);
+        }
+
+        if (!String.isBlank(displayOrderField)) {
+            orderByFields.add(displayOrderField);
+        }
+
+        if (orderByFields.isEmpty()) {
+            orderByFields.add('MasterLabel');
+        }
+
+        query +=
+            ' ORDER BY ' +
+            String.join(orderByFields, ', ');
+
+        List<Map<String, Object>> result =
+            new List<Map<String, Object>>();
+
+        for (SObject config : Database.query(query)) {
+
+            String questionId =
+                valueAsString(config, questionIdField);
+
+            if (String.isBlank(questionId)) {
+                questionId =
+                    valueAsString(config, 'DeveloperName');
+            }
+
+            String label =
+                valueAsString(config, labelField);
+
+            if (String.isBlank(label)) {
+                label =
+                    valueAsString(config, 'MasterLabel');
+            }
+
+            String typeValue =
+                valueAsString(config, typeField);
+
+            if (String.isBlank(typeValue)) {
+                typeValue = 'text';
+            }
+
+            Integer pageNumber =
+                valueAsInteger(config, pageField, 1);
+
+            Integer displayOrder =
+                valueAsInteger(
+                    config,
+                    displayOrderField,
+                    result.size() + 1
+                );
+
+            Boolean isRequired =
+                valueAsBoolean(config, requiredField);
+
+            String helpText =
+                valueAsString(config, helpTextField);
+
+            String validationRule =
+                valueAsString(config, validationRuleField);
+
+            String picklistValues =
+                valueAsString(config, picklistValuesField);
+
+            Map<String, Object> fieldMap =
+                new Map<String, Object>();
+
+            fieldMap.put('id', questionId);
+            fieldMap.put('label', label);
+            fieldMap.put('type', typeValue);
+            fieldMap.put('page', pageNumber);
+            fieldMap.put('displayOrder', displayOrder);
+            fieldMap.put('required', isRequired);
+            fieldMap.put('helpText', helpText);
+            fieldMap.put('validationRule', validationRule);
+            fieldMap.put('picklistValues', picklistValues);
+            fieldMap.put('MasterLabel', label);
+            fieldMap.put('Question_Type__c', typeValue);
+            fieldMap.put('Question_Id__c', questionId);
+            fieldMap.put('Page_Number__c', pageNumber);
+            fieldMap.put('Display_Order__c', displayOrder);
+            fieldMap.put('Is_Required__c', isRequired);
+            fieldMap.put('Help_Text__c', helpText);
+            fieldMap.put('Validation_Rule__c', validationRule);
+            fieldMap.put('Picklist_Values__c', picklistValues);
+
+            result.add(fieldMap);
+
+        }
+
+        return result;
+
+    }
+
+    private static String firstExistingField(
+
+        Map<String, Schema.SObjectField> fields,
+
+        List<String> candidates
+
+    ) {
+
+        for (String candidate : candidates) {
+
+            if (
+                fields.containsKey(candidate)
+            ) {
+
+                return candidate;
+
+            }
+
+        }
+
+        return null;
+
+    }
+
+    private static String valueAsString(
+
+        SObject record,
+
+        String fieldName
+
+    ) {
+
+        if (
+            record == null ||
+            String.isBlank(fieldName)
+        ) {
+
+            return null;
+
+        }
+
+        Object value =
+            record.get(fieldName);
+
+        return value == null
+            ? null
+            : String.valueOf(value);
+
+    }
+
+    private static Integer valueAsInteger(
+
+        SObject record,
+
+        String fieldName,
+
+        Integer fallback
+
+    ) {
+
+        String value =
+            valueAsString(record, fieldName);
+
+        if (String.isBlank(value)) {
+
+            return fallback;
+
+        }
+
+        try {
+
+            return Integer.valueOf(value);
+
+        } catch (Exception e) {
+
+            return fallback;
+
+        }
+
+    }
+
+    private static Boolean valueAsBoolean(
+
+        SObject record,
+
+        String fieldName
+
+    ) {
+
+        if (
+            record == null ||
+            String.isBlank(fieldName)
+        ) {
+
+            return false;
+
+        }
+
+        Object value =
+            record.get(fieldName);
+
+        if (value instanceof Boolean) {
+
+            return (Boolean) value;
+
+        }
+
+        return String.valueOf(value).toLowerCase() == 'true';
+
+    }
+
+    private static String normalizeApplicationType(String applicationType) {
+
+        return String.isBlank(applicationType)
+            ? 'Graduate Admission'
+            : applicationType.trim();
+
+    }
+
+    private static Integer normalizeTotalPages(Integer totalPages) {
+
+        return totalPages == null ||
+            totalPages <= 0
+            ? 5
+            : totalPages;
+
+    }
     
     // LOAD FORM DRAFT
     
     @AuraEnabled
     public static Map<String, Object>
-    loadFormDraft(Id userId) {
+    loadFormDraft(
+
+        Id userId
+
+    ) {
+
+        return loadFormDraftForForm(
+            userId,
+            null
+        );
+
+    }
+
+    @AuraEnabled
+    public static Map<String, Object>
+    loadFormDraftForForm(
+
+        Id userId,
+
+        String applicationType
+
+    ) {
     
         Map<String, Object> result =
             new Map<String, Object>();
+
+        String normalizedApplicationType =
+            normalizeApplicationType(applicationType);
     
         List<Form_Submission__c> drafts = [
     
@@ -198,6 +633,11 @@ public without sharing class AcademicFormController {
     
             AND User__c =
                 :UserInfo.getUserId()
+
+            AND Application_Type__c =
+                :normalizedApplicationType
+
+            ORDER BY Last_Saved__c DESC
     
             LIMIT 1
     
@@ -296,6 +736,38 @@ public without sharing class AcademicFormController {
         String formData,
     
         String sessionId
+
+    ) {
+
+        return saveFormDraftForForm(
+            submissionId,
+            userId,
+            currentPage,
+            formData,
+            sessionId,
+            null,
+            null
+        );
+
+    }
+
+    @AuraEnabled
+    public static Map<String, Object>
+    saveFormDraftForForm(
+
+        Id submissionId,
+
+        Id userId,
+
+        Integer currentPage,
+
+        String formData,
+
+        String sessionId,
+
+        String applicationType,
+
+        Integer totalPages
     
     ) {
     
@@ -303,6 +775,12 @@ public without sharing class AcademicFormController {
             new Map<String, Object>();
 
         try {
+
+        String normalizedApplicationType =
+            normalizeApplicationType(applicationType);
+
+        Integer normalizedTotalPages =
+            normalizeTotalPages(totalPages);
     
         Form_Submission__c submission;
     
@@ -328,13 +806,13 @@ public without sharing class AcademicFormController {
                      */
     
                     Application_Type__c =
-                        'Graduate Admission',
+                        normalizedApplicationType,
     
                     Total_Pages__c =
-                        5,
+                        normalizedTotalPages,
     
                     Percent_Complete__c =
-                        (currentPage * 100) / 5,
+                        (currentPage * 100) / normalizedTotalPages,
     
                     Started_Date__c =
                         System.now(),
@@ -362,6 +840,7 @@ public without sharing class AcademicFormController {
                 SELECT
                     Id,
                     Current_Page__c,
+                    Application_Type__c,
                     User__c
     
                 FROM Form_Submission__c
@@ -374,12 +853,15 @@ public without sharing class AcademicFormController {
     
             submission.Current_Page__c =
                 currentPage;
+
+            submission.Application_Type__c =
+                normalizedApplicationType;
     
             submission.Total_Pages__c =
-                5;
+                normalizedTotalPages;
     
             submission.Percent_Complete__c =
-                (currentPage * 100) / 5;
+                (currentPage * 100) / normalizedTotalPages;
     
             submission.Last_Saved__c =
                 System.now();
@@ -1191,11 +1673,34 @@ public without sharing class AcademicFormController {
         Id submissionId,
     
         String formData
+
+    ) {
+
+        return submitFormForForm(
+            submissionId,
+            formData,
+            null
+        );
+
+    }
+
+    @AuraEnabled
+    public static Map<String, Object>
+    submitFormForForm(
+
+        Id submissionId,
+
+        String formData,
+
+        Integer totalPages
     
     ) {
     
         Map<String, Object> result =
             new Map<String, Object>();
+
+        Integer normalizedTotalPages =
+            normalizeTotalPages(totalPages);
     
         Form_Submission__c submission = [
     
@@ -1225,7 +1730,7 @@ public without sharing class AcademicFormController {
             100;
     
         submission.Total_Pages__c =
-            5;
+            normalizedTotalPages;
     
         submission.Last_Saved__c =
             System.now();

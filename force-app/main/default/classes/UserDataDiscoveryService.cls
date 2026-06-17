@@ -133,6 +133,21 @@ public with sharing class UserDataDiscoveryService {
 
     ) {
 
+        return loadDiscoveryContext(
+            userId,
+            null
+        );
+
+    }
+
+    public static DiscoveryContext loadDiscoveryContext(
+
+        Id userId,
+
+        Id contextContactId
+
+    ) {
+
         DiscoveryContext context =
             new DiscoveryContext();
 
@@ -162,9 +177,14 @@ public with sharing class UserDataDiscoveryService {
         context.con =
             null;
 
+        Id contactIdToLoad =
+            contextContactId != null
+                ? contextContactId
+                : context.usr.ContactId;
+
         if (
 
-            context.usr.ContactId != null
+            contactIdToLoad != null
 
         ) {
 
@@ -187,7 +207,7 @@ public with sharing class UserDataDiscoveryService {
 
                 FROM Contact
 
-                WHERE Id = :context.usr.ContactId
+                WHERE Id = :contactIdToLoad
 
                 LIMIT 1
 
@@ -220,13 +240,33 @@ public with sharing class UserDataDiscoveryService {
 
     ) {
 
+        return discoverDataForForm(
+            userId,
+            questions,
+            null
+        );
+
+    }
+
+    public static Map<String, DataDiscoveryResult>
+    discoverDataForForm(
+
+        Id userId,
+
+        List<FormQuestion> questions,
+
+        Id contextContactId
+
+    ) {
+
         Map<String, DataDiscoveryResult>
             results =
                 new Map<String, DataDiscoveryResult>();
 
         DiscoveryContext context =
             loadDiscoveryContext(
-                userId
+                userId,
+                contextContactId
             );
 
         User usr =
@@ -717,10 +757,115 @@ public with sharing class UserDataDiscoveryService {
                     knowledge.toLowerCase();
 
                 /*
-                 * GPA
+                 * HOSPITAL INTAKE
                  */
 
                 if (
+
+                    isHealthInsuranceStatusQuestion(
+                        q.questionText
+                    )
+
+                ) {
+
+                    res.recommendedValue =
+                        extractHealthInsuranceStatus(
+                            q,
+                            knowledge
+                        );
+
+                    matched =
+                        !String.isBlank(
+                            res.recommendedValue
+                        );
+
+                }
+
+                else if (
+
+                    isInsuranceProviderQuestion(
+                        q.questionText
+                    )
+
+                ) {
+
+                    res.recommendedValue =
+                        extractInsuranceProvider(
+                            knowledge
+                        );
+
+                    matched =
+                        !String.isBlank(
+                            res.recommendedValue
+                        );
+
+                }
+
+                else if (
+
+                    isPolicyMemberIdQuestion(
+                        q.questionText
+                    )
+
+                ) {
+
+                    res.recommendedValue =
+                        extractPolicyMemberId(
+                            knowledge
+                        );
+
+                    matched =
+                        !String.isBlank(
+                            res.recommendedValue
+                        );
+
+                }
+
+                else if (
+
+                    isGroupNumberQuestion(
+                        q.questionText
+                    )
+
+                ) {
+
+                    res.recommendedValue =
+                        extractGroupNumber(
+                            knowledge
+                        );
+
+                    matched =
+                        !String.isBlank(
+                            res.recommendedValue
+                        );
+
+                }
+
+                else if (
+
+                    isPrimaryCarePhysicianQuestion(
+                        q.questionText
+                    )
+
+                ) {
+
+                    res.recommendedValue =
+                        extractPrimaryCarePhysician(
+                            knowledge
+                        );
+
+                    matched =
+                        !String.isBlank(
+                            res.recommendedValue
+                        );
+
+                }
+
+                /*
+                 * GPA
+                 */
+
+                else if (
 
                     label.contains(
                         'gpa'
@@ -2092,6 +2237,19 @@ public with sharing class UserDataDiscoveryService {
                             'Generic metadata question inference from applicant knowledge';
 
                     }
+
+                }
+
+                if (
+
+                    matched
+
+                ) {
+
+                    addResultSource(
+                        res,
+                        'Applicant_Knowledge__c'
+                    );
 
                 }
 
@@ -8271,6 +8429,24 @@ public with sharing class UserDataDiscoveryService {
 
     }
 
+    private static Boolean isPersonNameField(
+
+        String questionText
+
+    ) {
+
+        String fingerprint =
+            normalizeQuestionText(questionText);
+
+        return fingerprint.contains('first name') ||
+            fingerprint.contains('middle name') ||
+            fingerprint.contains('last name') ||
+            fingerprint.contains('given name') ||
+            fingerprint.contains('family name') ||
+            fingerprint.contains('surname');
+
+    }
+
     private static Boolean isEmailQuestion(
 
         FormQuestion question
@@ -8478,6 +8654,285 @@ public with sharing class UserDataDiscoveryService {
 
     }
 
+    private static Boolean isHealthInsuranceStatusQuestion(
+
+        String questionText
+
+    ) {
+
+        String normalizedQuestion =
+            normalizeQuestionText(questionText);
+
+        return normalizedQuestion.contains('health insurance') ||
+            (
+                normalizedQuestion.contains('insurance') &&
+                (
+                    normalizedQuestion.startsWith('do you have') ||
+                    normalizedQuestion.contains('coverage')
+                )
+            );
+
+    }
+
+    private static Boolean isInsuranceProviderQuestion(
+
+        String questionText
+
+    ) {
+
+        String normalizedQuestion =
+            normalizeQuestionText(questionText);
+
+        return normalizedQuestion.contains('insurance provider') ||
+            normalizedQuestion.contains('provider name') ||
+            normalizedQuestion.contains('insurance company') ||
+            normalizedQuestion.contains('insurance carrier');
+
+    }
+
+    private static Boolean isPolicyMemberIdQuestion(
+
+        String questionText
+
+    ) {
+
+        String normalizedQuestion =
+            normalizeQuestionText(questionText);
+
+        return normalizedQuestion.contains('policy member id') ||
+            normalizedQuestion.contains('member id') ||
+            normalizedQuestion.contains('policy id') ||
+            normalizedQuestion.contains('policy number');
+
+    }
+
+    private static Boolean isGroupNumberQuestion(
+
+        String questionText
+
+    ) {
+
+        String normalizedQuestion =
+            normalizeQuestionText(questionText);
+
+        return normalizedQuestion.contains('group number') ||
+            normalizedQuestion.contains('group id');
+
+    }
+
+    private static Boolean isPrimaryCarePhysicianQuestion(
+
+        String questionText
+
+    ) {
+
+        String normalizedQuestion =
+            normalizeQuestionText(questionText);
+
+        return normalizedQuestion.contains('primary care physician') ||
+            normalizedQuestion.contains('primary doctor') ||
+            normalizedQuestion.contains('pcp');
+
+    }
+
+    private static String extractHealthInsuranceStatus(
+
+        FormQuestion question,
+
+        String knowledge
+
+    ) {
+
+        String normalizedKnowledge =
+            normalizeQuestionText(knowledge);
+
+        if (
+            normalizedKnowledge.contains('no insurance') ||
+            normalizedKnowledge.contains('uninsured') ||
+            normalizedKnowledge.contains('does not have insurance')
+        ) {
+
+            return normalizeGenericAnswerForQuestionType(
+                'No',
+                question.questionType,
+                question.picklistValues
+            );
+
+        }
+
+        if (
+            normalizedKnowledge.contains('insurance') ||
+            normalizedKnowledge.contains('insured') ||
+            normalizedKnowledge.contains('coverage') ||
+            normalizedKnowledge.contains('policy') ||
+            normalizedKnowledge.contains('member id')
+        ) {
+
+            return normalizeGenericAnswerForQuestionType(
+                'Yes',
+                question.questionType,
+                question.picklistValues
+            );
+
+        }
+
+        return null;
+
+    }
+
+    private static String extractInsuranceProvider(String knowledge) {
+
+        return firstNonBlank(
+            extractLabeledKnowledgeValue(
+                knowledge,
+                new List<String>{
+                    'insurance provider name',
+                    'insurance provider',
+                    'insurance company',
+                    'insurance carrier',
+                    'provider'
+                }
+            ),
+            extractRegexValue(
+                knowledge,
+                '(?i)\\b(?:insured by|coverage through|insurance with|insurance is|provider is)\\s+([^.;\\n]+)'
+            )
+        );
+
+    }
+
+    private static String extractPolicyMemberId(String knowledge) {
+
+        return firstNonBlank(
+            extractLabeledKnowledgeValue(
+                knowledge,
+                new List<String>{
+                    'policy member id',
+                    'member id',
+                    'policy id',
+                    'policy number',
+                    'member number'
+                }
+            ),
+            extractRegexValue(
+                knowledge,
+                '(?i)\\b(?:policy|member)\\s*(?:id|number|#)?\\s*(?:is|:|=)?\\s*([A-Z0-9-]{4,})'
+            )
+        );
+
+    }
+
+    private static String extractGroupNumber(String knowledge) {
+
+        return firstNonBlank(
+            extractLabeledKnowledgeValue(
+                knowledge,
+                new List<String>{
+                    'group number',
+                    'group id',
+                    'insurance group number'
+                }
+            ),
+            extractRegexValue(
+                knowledge,
+                '(?i)\\bgroup\\s*(?:number|id|#)?\\s*(?:is|:|=)?\\s*([A-Z0-9-]{2,})'
+            )
+        );
+
+    }
+
+    private static String extractPrimaryCarePhysician(String knowledge) {
+
+        return firstNonBlank(
+            extractLabeledKnowledgeValue(
+                knowledge,
+                new List<String>{
+                    'primary care physician',
+                    'primary doctor',
+                    'pcp'
+                }
+            ),
+            extractRegexValue(
+                knowledge,
+                '(?i)\\b(?:primary care physician|primary doctor|pcp)\\s*(?:is|:|=)?\\s*(Dr\\.?\\s+[^.;\\n]+|[^.;\\n]+)'
+            )
+        );
+
+    }
+
+    private static String extractLabeledKnowledgeValue(
+
+        String knowledge,
+
+        List<String> labels
+
+    ) {
+
+        if (
+            String.isBlank(knowledge) ||
+            labels == null
+        ) {
+
+            return null;
+
+        }
+
+        for (String label : labels) {
+
+            if (String.isBlank(label)) {
+                continue;
+            }
+
+            String value =
+                extractRegexValue(
+                    knowledge,
+                    '(?i)\\b' +
+                    escapeRegex(label) +
+                    '\\b\\s*(?:is|are|:|=|-)\\s*([^.;\\n]+)'
+                );
+
+            if (!String.isBlank(value)) {
+                return value;
+            }
+
+        }
+
+        return null;
+
+    }
+
+    private static String extractRegexValue(
+
+        String knowledge,
+
+        String regex
+
+    ) {
+
+        if (
+            String.isBlank(knowledge) ||
+            String.isBlank(regex)
+        ) {
+
+            return null;
+
+        }
+
+        Matcher matcher =
+            Pattern.compile(regex).matcher(knowledge);
+
+        if (matcher.find()) {
+
+            return cleanGenericAnswer(
+                matcher.group(1)
+            );
+
+        }
+
+        return null;
+
+    }
+
     private static String inferGenericKnowledgeAnswer(
 
         String questionText,
@@ -8617,6 +9072,18 @@ public with sharing class UserDataDiscoveryService {
                 questionType,
                 picklistValues
             );
+
+        }
+
+        if (
+
+            isPersonNameField(
+                questionText
+            )
+
+        ) {
+
+            return null;
 
         }
 

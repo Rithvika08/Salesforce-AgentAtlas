@@ -1,8 +1,8 @@
 <template> 
 
     <lightning-card
-        title="Academic Application Intake Portal"
-        icon-name="standard:education">
+        title={cardTitle}
+        icon-name={iconName}>
 
         <!-- MAIN LAYOUT -->
 
@@ -13,7 +13,9 @@
             <div class="sidebar">
 
                 <c-application-progress-sidebar
-                    current-page={currentPage}>
+                    current-page={currentPage}
+                    total-pages={totalPages}
+                    page-titles={pageTitles}>
                 </c-application-progress-sidebar>
 
             </div>
@@ -72,6 +74,7 @@
                         full-schema={schemaQuestions}
                         ai-field-messages={aiFieldMessages}
                         source-breakdown={sourceBreakdownByQuestion}
+                        page-titles={pageTitles}
                         onfieldchange={handleFieldChange}>
 
                     </c-dynamicformpage>
@@ -92,7 +95,7 @@
 
                         <h2 class="slds-text-heading_large slds-m-top_medium">
 
-                            Application Submitted Successfully
+                            {submittedHeading}
 
                         </h2>
 
@@ -150,7 +153,7 @@
                             onclick={handleSubmit}
                             type="button">
 
-                            Submit Application
+                            {submitButtonLabel}
 
                         </button>
 
@@ -174,6 +177,10 @@
 
                             submission-id={submissionId}
 
+                            form-config-object-api-name={formConfigObjectApiName}
+
+                            context-record-id={recordId}
+
                             onaifilled={handleAIFilled}>
 
                         </c-ai-form-filler-button>
@@ -183,6 +190,8 @@
                             current-page={currentPage}
                             form-config={schemaQuestions}
                             submission-id={submissionId}
+                            form-config-object-api-name={formConfigObjectApiName}
+                            context-record-id={recordId}
                             onfieldaimessage={handleFieldAIMessage}
                             onaifilled={handleAIFilled}>
 

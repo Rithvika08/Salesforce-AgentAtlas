@@ -69,6 +69,32 @@ export default class FormField
 
     }
 
+    get inputType() {
+
+        return this.isPhoneLikeField
+            ? 'phone'
+            : this.fieldConfig?.type;
+
+    }
+
+    get isPhoneLikeField() {
+
+        const type =
+            this.fieldConfig?.type
+                ?.toLowerCase();
+
+        const label =
+            String(
+                this.fieldConfig?.label || ''
+            ).toLowerCase();
+
+        return type === 'phone' ||
+            label.includes('phone') ||
+            label.includes('mobile') ||
+            label.includes('telephone');
+
+    }
+
     get hasSourceFields() {
 
         return this.fieldConfig?.isMergedAnswer === true &&
@@ -347,6 +373,14 @@ export default class FormField
         if (typeof val === 'string') {
 
             val = val.trim();
+
+        }
+
+        if (this.isPhoneLikeField) {
+
+            val = String(val || '')
+                .replace(/,/g, '')
+                .trim();
 
         }
 

@@ -16,7 +16,7 @@ export default class Dynamicformpage extends LightningElement {
 
     // PAGE TITLES
 
-    pageTitles = {
+    defaultPageTitles = {
 
         1: 'Personal Information',
 
@@ -30,13 +30,18 @@ export default class Dynamicformpage extends LightningElement {
 
     };
 
+    @api pageTitles = {};
+
     // FILTER + SORT CURRENT PAGE FIELDS
 
     get activePageData() {
 
         return {
 
-            title: this.pageTitles[this.currentPage],
+            title:
+                this.pageTitles?.[this.currentPage] ||
+                this.defaultPageTitles[this.currentPage] ||
+                `Page ${this.currentPage}`,
 
             fields: this.fullSchema
 

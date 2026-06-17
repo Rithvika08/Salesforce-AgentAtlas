@@ -16,4 +16,43 @@
         <target>lightningCommunity__Page</target>
         <target>lightningCommunity__Default</target>
     </targets>
+    <targetConfigs>
+        <targetConfig targets="lightning__AppPage,lightning__HomePage,lightning__RecordPage">
+            <property
+                name="formConfigObjectApiName"
+                type="String"
+                label="Form Config Metadata Type"
+                default="Form_Configuration_c__mdt" />
+            <property
+                name="cardTitle"
+                type="String"
+                label="Card Title"
+                default="Academic Application Intake Portal" />
+            <property
+                name="iconName"
+                type="String"
+                label="Card Icon"
+                default="standard:education" />
+            <property
+                name="submitButtonLabel"
+                type="String"
+                label="Submit Button Label"
+                default="Submit Application" />
+            <property
+                name="submittedHeading"
+                type="String"
+                label="Submitted Heading"
+                default="Application Submitted Successfully" />
+            <property
+                name="pageTitlesString"
+                type="String"
+                label="Page Titles"
+                description="Optional pipe-separated page titles in page order." />
+            <property
+                name="excludedQuestionLabelsString"
+                type="String"
+                label="Excluded Question Labels"
+                description="Optional pipe-separated question labels to hide from this form." />
+        </targetConfig>
+    </targetConfigs>
 </LightningComponentBundle>

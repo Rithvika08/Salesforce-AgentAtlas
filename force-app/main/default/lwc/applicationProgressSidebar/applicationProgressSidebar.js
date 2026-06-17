@@ -4,46 +4,54 @@ export default class ApplicationProgressSidebar extends LightningElement {
 
     @api currentPage = 1;
 
+    @api totalPages = 5;
+
+    @api pageTitles = {};
+
+    defaultPageTitles = {
+
+        1: 'Personal Information',
+
+        2: 'Contact Information',
+
+        3: 'Educational Background',
+
+        4: 'Program Selection & Academic Interests',
+
+        5: 'Essays & Final Questions'
+
+    };
+
     get steps() {
 
-        return [
+        return Array.from(
 
             {
-                id: 1,
-                label: 'Personal Information',
-                completed: this.currentPage > 1,
-                circleClass: this.getClass(1)
+                length: Number(this.totalPages) || 1
             },
 
-            {
-                id: 2,
-                label: 'Contact Information',
-                completed: this.currentPage > 2,
-                circleClass: this.getClass(2)
-            },
+            (_, index) => {
 
-            {
-                id: 3,
-                label: 'Educational Background',
-                completed: this.currentPage > 3,
-                circleClass: this.getClass(3)
-            },
+                const pageNumber =
+                    index + 1;
 
-            {
-                id: 4,
-                label: 'Program Selection & Academic Interests',
-                completed: this.currentPage > 4,
-                circleClass: this.getClass(4)
-            },
+                return {
 
-            {
-                id: 5,
-                label: 'Essays & Final Questions',
-                completed: false,
-                circleClass: this.getClass(5)
+                    id: pageNumber,
+                    label:
+                        this.pageTitles?.[pageNumber] ||
+                        this.defaultPageTitles[pageNumber] ||
+                        `Page ${pageNumber}`,
+                    completed:
+                        this.currentPage > pageNumber,
+                    circleClass:
+                        this.getClass(pageNumber)
+
+                };
+
             }
 
-        ];
+        );
 
     }
 

@@ -5,10 +5,10 @@ import { ShowToastEvent }
 from 'lightning/platformShowToastEvent';
 
 import fillFormWithAI
-from '@salesforce/apex/AIFormFillerController.fillFormWithAI';
+from '@salesforce/apex/AIFormFillerController.fillFormWithAIForObjectAndContact';
 
 import fillSingleFieldWithAI
-from '@salesforce/apex/AIFormFillerController.fillSingleFieldWithAI';
+from '@salesforce/apex/AIFormFillerController.fillSingleFieldWithAIForContact';
 
 import interpretPromptCommand
 from '@salesforce/apex/PromptBuilderCommandInterpreter.interpretCommand';
@@ -30,6 +30,11 @@ export default class AiFormFillerChat
     @api currentPage;
 
     @api submissionId;
+
+    @api formConfigObjectApiName =
+        'Form_Configuration_c__mdt';
+
+    @api contextRecordId;
 
     @track messages = [
         {
@@ -361,7 +366,15 @@ export default class AiFormFillerChat
     async runAutoFillFromPrompt(prompt) {
 
         const result =
-            await fillFormWithAI();
+            await fillFormWithAI({
+
+                configObjectApiName:
+                    this.formConfigObjectApiName,
+
+                contextContactId:
+                    this.contextRecordId
+
+            });
 
         const filledData =
             result?.filledFields || {};
@@ -711,9 +724,10 @@ export default class AiFormFillerChat
         ) {
 
             this.addMessage(
-                result.answer ||
-                    result.promptResponse ||
-                    'I can fill fields, clear fields, replace values, and understand changed question labels.',
+                this.getPromptBuilderDisplayMessage(
+                    result,
+                    'I can fill fields, clear fields, replace values, and understand changed question labels.'
+                ),
                 'assistant'
             );
 
@@ -3917,7 +3931,9 @@ export default class AiFormFillerChat
                                 .join(
                                     ','
                                 )
-                            : ''
+                            : '',
+                    contextContactId:
+                        this.contextRecordId
                 });
 
             return result?.filledFields?.[field.id] || null;
@@ -4195,7 +4211,9 @@ export default class AiFormFillerChat
                         ? this.getFieldOptions(field)
                             .map(option => option.value || option.label)
                             .join(',')
-                        : ''
+                        : '',
+                contextContactId:
+                    this.contextRecordId
             });
 
         const filledData =
@@ -7432,6 +7450,70 @@ export default class AiFormFillerChat
 
         return text ||
             'Something went wrong while filling the form.';
+
+    }
+
+    getPromptBuilderDisplayMessage(result, fallbackMessage) {
+
+        const directMessage =
+            result?.answer ||
+            result?.message ||
+            result?.userMessage ||
+            result?.clarificationQuestion;
+
+        if (
+            directMessage &&
+            !this.looksLikeJsonPayload(directMessage)
+        ) {
+
+            return directMessage;
+
+        }
+
+        if (
+            result?.action === 'greeting' ||
+            result?.type === 'greeting'
+        ) {
+
+            return 'Hi. I can fill all fields, fill one field, clear a field, or replace a field value.';
+
+        }
+
+        if (
+            result?.action === 'help' ||
+            result?.type === 'help'
+        ) {
+
+            return fallbackMessage;
+
+        }
+
+        const promptResponse =
+            result?.promptResponse;
+
+        if (
+            promptResponse &&
+            !this.looksLikeJsonPayload(promptResponse)
+        ) {
+
+            return promptResponse;
+
+        }
+
+        return fallbackMessage;
+
+    }
+
+    looksLikeJsonPayload(value) {
+
+        const text =
+            String(value || '').trim();
+
+        return text.startsWith('{') ||
+            text.startsWith('```') ||
+            text.toLowerCase().startsWith('json') ||
+            text.includes('"action"') ||
+            text.includes('"targetQuestionId"');
 
     }
 

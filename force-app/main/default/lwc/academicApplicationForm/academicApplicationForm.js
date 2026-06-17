@@ -1,20 +1,46 @@
-import { LightningElement, track }
+import { LightningElement, api, track }
 from 'lwc';
 
 import loadFormConfiguration
-from '@salesforce/apex/AcademicFormController.loadFormConfiguration';
+from '@salesforce/apex/AcademicFormController.loadFormConfigurationForObject';
 
 import loadFormDraft
-from '@salesforce/apex/AcademicFormController.loadFormDraft';
+from '@salesforce/apex/AcademicFormController.loadFormDraftForForm';
 
 import saveFormDraft
-from '@salesforce/apex/AcademicFormController.saveFormDraft';
+from '@salesforce/apex/AcademicFormController.saveFormDraftForForm';
 
 import submitForm
-from '@salesforce/apex/AcademicFormController.submitForm';
+from '@salesforce/apex/AcademicFormController.submitFormForForm';
 
 export default class AcademicApplicationForm
     extends LightningElement {
+
+    @api formConfigObjectApiName =
+        'Form_Configuration_c__mdt';
+
+    @api recordId;
+
+    @api formKey =
+        'Academic Application';
+
+    @api excludedQuestionLabelsString =
+        '';
+
+    @api cardTitle =
+        'Academic Application Intake Portal';
+
+    @api iconName =
+        'standard:education';
+
+    @api submitButtonLabel =
+        'Submit Application';
+
+    @api submittedHeading =
+        'Application Submitted Successfully';
+
+    @api pageTitlesString =
+        '';
 
     // FORM CONFIG
 
@@ -42,6 +68,8 @@ export default class AcademicApplicationForm
 
     @track aiFieldMessages = {};
 
+    @track pageTitles = {};
+
     // SUBMISSION
 
     @track isSubmitted = false;
@@ -67,6 +95,9 @@ export default class AcademicApplicationForm
 
     connectedCallback() {
 
+        this.localDraftKey =
+            `${this.normalizeText(this.formKey)}FormDraft:v1`;
+
         this.initializeForm();
 
     }
@@ -81,51 +112,81 @@ export default class AcademicApplicationForm
 
             const configResult =
 
-                await loadFormConfiguration();
+                await loadFormConfiguration({
+
+                    configObjectApiName:
+                        this.formConfigObjectApiName
+
+                });
 
             // MAP CONFIG
 
             this.schemaQuestions =
 
-                configResult.map(field => {
+                configResult
+                    .map(field => {
 
-                    return {
+                        const label =
+                            field.MasterLabel ||
+                            field.label;
+
+                        const type =
+                            this.normalizeFieldType(
+                                field.Question_Type__c ||
+                                field.type,
+                                label
+                            );
+
+                        return {
 
                         id:
-                            field.Question_Id__c,
+                            field.Question_Id__c ||
+                            field.id,
 
                         label:
-                            field.MasterLabel,
+                            label,
 
                         type:
-                            field.Question_Type__c,
+                            type,
 
                         page:
                             Number(
-                                field.Page_Number__c
+                                field.Page_Number__c ||
+                                field.page ||
+                                1
                             ),
 
                         displayOrder:
                             Number(
-                                field.Display_Order__c
+                                field.Display_Order__c ||
+                                field.displayOrder ||
+                                0
                             ),
 
                         required:
-                            field.Is_Required__c,
+                            field.Is_Required__c ||
+                            field.required,
 
                         helpText:
-                            field.Help_Text__c,
+                            field.Help_Text__c ||
+                            field.helpText,
 
                         validationRule:
-                            field.Validation_Rule__c,
+                            field.Validation_Rule__c ||
+                            field.validationRule,
 
                         // FIXED PICKLIST OPTIONS
 
                         options:
-                            field.Picklist_Values__c
+                            (
+                                field.Picklist_Values__c ||
+                                field.picklistValues
+                            )
 
-                                ? field
-                                    .Picklist_Values__c
+                                ? (
+                                    field.Picklist_Values__c ||
+                                    field.picklistValues
+                                )
                                     .split(',')
 
                                     .map(option => {
@@ -144,9 +205,18 @@ export default class AcademicApplicationForm
 
                                 : []
 
-                    };
+                        };
 
-                });
+                    })
+                    .filter(field =>
+                        !this.isExcludedQuestion(field)
+                    );
+
+            this.totalPages =
+                this.calculateTotalPages();
+
+            this.pageTitles =
+                this.parsePageTitlesString();
 
             console.log(
                 'SCHEMA:',
@@ -159,7 +229,14 @@ export default class AcademicApplicationForm
 
             const draftResult =
 
-                await loadFormDraft();
+                await loadFormDraft({
+
+                    userId: null,
+
+                    applicationType:
+                        this.formKey
+
+                });
 
             console.log(
                 'DRAFT:',
@@ -1346,6 +1423,16 @@ export default class AcademicApplicationForm
 
     ) {
 
+        if (
+            this.isPhoneField(fieldConfig)
+        ) {
+
+            return String(value || '')
+                .replace(/,/g, '')
+                .trim();
+
+        }
+
         return value;
 
     }
@@ -1859,7 +1946,15 @@ export default class AcademicApplicationForm
                 fieldConfig.type || ''
             ).toLowerCase();
 
-        return fieldType === 'phone';
+        const fieldLabel =
+            String(
+                fieldConfig.label || ''
+            ).toLowerCase();
+
+        return fieldType === 'phone' ||
+            fieldLabel.includes('phone') ||
+            fieldLabel.includes('mobile') ||
+            fieldLabel.includes('telephone');
 
     }
 
@@ -2069,7 +2164,13 @@ export default class AcademicApplicationForm
                             this.formData
                         ),
 
-                    sessionId: null
+                    sessionId: null,
+
+                    applicationType:
+                        this.formKey,
+
+                    totalPages:
+                        this.totalPages
 
                 });
 
@@ -2201,7 +2302,10 @@ export default class AcademicApplicationForm
                     formData:
                         JSON.stringify(
                             this.formData
-                        )
+                        ),
+
+                    totalPages:
+                        this.totalPages
 
                 });
 
@@ -2485,6 +2589,121 @@ export default class AcademicApplicationForm
 
         return this.currentPage ===
                this.totalPages;
+
+    }
+
+    calculateTotalPages() {
+
+        if (
+            !this.schemaQuestions ||
+            this.schemaQuestions.length === 0
+        ) {
+
+            return 1;
+
+        }
+
+        return Math.max(
+            ...this.schemaQuestions.map(question =>
+                Number(question.page || 1)
+            )
+        );
+
+    }
+
+    normalizeFieldType(type, label) {
+
+        const normalizedType =
+            String(type || 'text')
+                .trim()
+                .toLowerCase();
+
+        const normalizedLabel =
+            String(label || '')
+                .toLowerCase();
+
+        if (
+            normalizedLabel.includes('phone') ||
+            normalizedLabel.includes('mobile') ||
+            normalizedLabel.includes('telephone')
+        ) {
+
+            return 'phone';
+
+        }
+
+        return normalizedType || 'text';
+
+    }
+
+    isExcludedQuestion(field) {
+
+        const excludedLabels =
+            this.parseExcludedQuestionLabels();
+
+        if (excludedLabels.length === 0) {
+
+            return false;
+
+        }
+
+        return excludedLabels.includes(
+            this.normalizeText(field?.label)
+        );
+
+    }
+
+    parseExcludedQuestionLabels() {
+
+        if (!this.excludedQuestionLabelsString) {
+
+            return [];
+
+        }
+
+        return this.excludedQuestionLabelsString
+            .split('|')
+            .map(label =>
+                this.normalizeText(label)
+            )
+            .filter(label => label);
+
+    }
+
+    parsePageTitlesString() {
+
+        if (!this.pageTitlesString) {
+
+            return {};
+
+        }
+
+        return this.pageTitlesString
+            .split('|')
+            .reduce((titles, title, index) => {
+
+                const cleanTitle =
+                    title.trim();
+
+                if (cleanTitle) {
+
+                    titles[index + 1] =
+                        cleanTitle;
+
+                }
+
+                return titles;
+
+            }, {});
+
+    }
+
+    normalizeText(value) {
+
+        return String(value || '')
+            .trim()
+            .toLowerCase()
+            .replace(/\s+/g, ' ');
 
     }
 

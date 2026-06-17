@@ -15,6 +15,25 @@ public without sharing class EinsteinPromptExtractionService {
 
     ) {
 
+        return extractAnswers(
+            userId,
+            questions,
+            null
+        );
+
+    }
+
+    public static Map<String, UserDataDiscoveryService.DataDiscoveryResult>
+    extractAnswers(
+
+        Id userId,
+
+        List<UserDataDiscoveryService.FormQuestion> questions,
+
+        Id contextContactId
+
+    ) {
+
         Map<String, UserDataDiscoveryService.DataDiscoveryResult> results =
             new Map<String, UserDataDiscoveryService.DataDiscoveryResult>();
 
@@ -32,7 +51,8 @@ public without sharing class EinsteinPromptExtractionService {
 
         UserDataDiscoveryService.DiscoveryContext context =
             UserDataDiscoveryService.loadDiscoveryContext(
-                userId
+                userId,
+                contextContactId
             );
 
         String sourceDataJson =
@@ -42,10 +62,17 @@ public without sharing class EinsteinPromptExtractionService {
                 )
             );
 
+        String promptApplicantKnowledge =
+            buildPromptApplicantKnowledgeInput(
+                context,
+                sourceDataJson
+            );
+
         fillMissingFieldsWithSinglePromptBuilderPass(
             results,
             questions,
-            sourceDataJson
+            promptApplicantKnowledge,
+            context
         );
 
         return results;
@@ -58,7 +85,9 @@ public without sharing class EinsteinPromptExtractionService {
 
         List<UserDataDiscoveryService.FormQuestion> questions,
 
-        String sourceDataJson
+        String sourceDataJson,
+
+        UserDataDiscoveryService.DiscoveryContext context
 
     ) {
 
@@ -81,7 +110,7 @@ public without sharing class EinsteinPromptExtractionService {
                     parseResults(
                         promptResponse,
                         questions,
-                        null
+                        context
                     );
 
             for (
@@ -604,6 +633,43 @@ public without sharing class EinsteinPromptExtractionService {
 
     }
 
+    private static String buildPromptApplicantKnowledgeInput(
+
+        UserDataDiscoveryService.DiscoveryContext context,
+
+        String sourceDataJson
+
+    ) {
+
+        String applicantKnowledge =
+            context == null ||
+            context.con == null
+                ? ''
+                : context.con.Applicant_Knowledge__c;
+
+        if (
+            String.isBlank(applicantKnowledge)
+        ) {
+
+            return String.isBlank(sourceDataJson)
+                ? ''
+                : sourceDataJson;
+
+        }
+
+        return 'Applicant Knowledge:' +
+            '\n' +
+            applicantKnowledge +
+            '\n\nStructured Source Data JSON:' +
+            '\n' +
+            (
+                String.isBlank(sourceDataJson)
+                    ? '{}'
+                    : sourceDataJson
+            );
+
+    }
+
     private static Map<String, UserDataDiscoveryService.DataDiscoveryResult>
     parseResults(
 
@@ -886,6 +952,16 @@ public without sharing class EinsteinPromptExtractionService {
                     )
                 );
 
+            sourceFields =
+                inferApplicantKnowledgeSourceFields(
+                    questionById.get(
+                        questionId
+                    ),
+                    value,
+                    sourceFields,
+                    context
+                );
+
             if (
 
                 sourceFields.isEmpty()
@@ -1146,6 +1222,21 @@ public without sharing class EinsteinPromptExtractionService {
 
         if (
 
+            isMiddleNameQuestion(
+                question
+            ) &&
+            !isPlausibleMiddleNameValue(
+                value
+            )
+
+        ) {
+
+            return null;
+
+        }
+
+        if (
+
             (
                 type == 'picklist' ||
                 type == 'dropdown' ||
@@ -1187,6 +1278,58 @@ public without sharing class EinsteinPromptExtractionService {
         }
 
         return value.trim();
+
+    }
+
+    private static Boolean isMiddleNameQuestion(
+
+        UserDataDiscoveryService.FormQuestion question
+
+    ) {
+
+        return question != null &&
+            normalizeText(
+                question.questionText
+            ).contains(
+                'middle name'
+            );
+
+    }
+
+    private static Boolean isPlausibleMiddleNameValue(
+
+        String value
+
+    ) {
+
+        if (String.isBlank(value)) {
+
+            return false;
+
+        }
+
+        String trimmedValue =
+            value.trim();
+
+        if (
+            trimmedValue.length() > 40 ||
+            trimmedValue.contains(',') ||
+            trimmedValue.contains('.') ||
+            trimmedValue.contains(':') ||
+            normalizeText(trimmedValue).contains('first name') ||
+            normalizeText(trimmedValue).contains('middle name') ||
+            normalizeText(trimmedValue).contains('last name')
+        ) {
+
+            return false;
+
+        }
+
+        return Pattern.compile(
+            '[A-Za-z][A-Za-z -]*'
+        ).matcher(
+            trimmedValue
+        ).matches();
 
     }
 
@@ -1294,6 +1437,138 @@ public without sharing class EinsteinPromptExtractionService {
         }
 
         return sourceFields;
+
+    }
+
+    private static List<String> inferApplicantKnowledgeSourceFields(
+
+        UserDataDiscoveryService.FormQuestion question,
+
+        String value,
+
+        List<String> sourceFields,
+
+        UserDataDiscoveryService.DiscoveryContext context
+
+    ) {
+
+        if (
+            sourceFields == null
+        ) {
+
+            sourceFields =
+                new List<String>();
+
+        }
+
+        if (
+            !sourceFields.isEmpty() ||
+            String.isBlank(value) ||
+            context == null ||
+            context.con == null ||
+            String.isBlank(
+                context.con.Applicant_Knowledge__c
+            )
+        ) {
+
+            return sourceFields;
+
+        }
+
+        String normalizedKnowledge =
+            normalizeText(
+                context.con.Applicant_Knowledge__c
+            );
+
+        String normalizedValue =
+            normalizeText(value);
+
+        Boolean valueAppearsInKnowledge =
+            !String.isBlank(normalizedValue) &&
+            normalizedKnowledge.contains(
+                normalizedValue
+            );
+
+        Boolean booleanAnswerSupported =
+            isBooleanAnswerSupportedByApplicantKnowledge(
+                question,
+                value,
+                normalizedKnowledge
+            );
+
+        if (
+            valueAppearsInKnowledge ||
+            booleanAnswerSupported
+        ) {
+
+            addSourceField(
+                sourceFields,
+                'Applicant_Knowledge__c'
+            );
+
+        }
+
+        return sourceFields;
+
+    }
+
+    private static Boolean isBooleanAnswerSupportedByApplicantKnowledge(
+
+        UserDataDiscoveryService.FormQuestion question,
+
+        String value,
+
+        String normalizedKnowledge
+
+    ) {
+
+        if (
+            question == null ||
+            String.isBlank(value) ||
+            String.isBlank(normalizedKnowledge)
+        ) {
+
+            return false;
+
+        }
+
+        String normalizedValue =
+            normalizeText(value);
+
+        if (
+            normalizedValue != 'yes' &&
+            normalizedValue != 'true' &&
+            normalizedValue != 'no' &&
+            normalizedValue != 'false'
+        ) {
+
+            return false;
+
+        }
+
+        String normalizedLabel =
+            normalizeText(
+                question.questionText
+            );
+
+        if (
+            normalizedLabel.contains('insurance') &&
+            (
+                normalizedKnowledge.contains('insurance') ||
+                normalizedKnowledge.contains('insured') ||
+                normalizedKnowledge.contains('coverage') ||
+                normalizedKnowledge.contains('policy') ||
+                normalizedKnowledge.contains('member id') ||
+                normalizedKnowledge.contains('provider')
+            )
+        ) {
+
+            return normalizedValue == 'yes' ||
+                normalizedValue == 'true';
+
+        }
+
+        return false;
 
     }
 

@@ -5,7 +5,7 @@ import { ShowToastEvent }
 from 'lightning/platformShowToastEvent';
 
 import fillFormWithAI
-from '@salesforce/apex/AIFormFillerController.fillFormWithAI';
+from '@salesforce/apex/AIFormFillerController.fillFormWithAIForObjectAndContact';
 
 export default class AiFormFillerButton
     extends LightningElement {
@@ -17,6 +17,11 @@ export default class AiFormFillerButton
     @api formConfig;
 
     @api submissionId;
+
+    @api formConfigObjectApiName =
+        'Form_Configuration_c__mdt';
+
+    @api contextRecordId;
 
     @track isProcessing = false;
 
@@ -75,7 +80,15 @@ export default class AiFormFillerButton
                 'Gathering data...';
 
             const result =
-                await fillFormWithAI();
+                await fillFormWithAI({
+
+                    configObjectApiName:
+                        this.formConfigObjectApiName,
+
+                    contextContactId:
+                        this.contextRecordId
+
+                });
 
             this.processingMessage =
                 'AI is filling your form...';
