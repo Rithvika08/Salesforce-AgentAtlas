@@ -72,7 +72,10 @@
                         full-schema={schemaQuestions}
                         ai-field-messages={aiFieldMessages}
                         source-breakdown={sourceBreakdownByQuestion}
-                        onfieldchange={handleFieldChange}>
+                        onfieldchange={handleFieldChange}
+                        onfieldrevert={handleFieldRevert}
+                        onfieldundo={handleFieldUndo}
+                        onfieldredo={handleFieldRedo}>
 
                     </c-dynamicformpage>
 
@@ -187,6 +190,19 @@
                             onaifilled={handleAIFilled}>
 
                         </c-ai-form-filler-chat>
+
+                        <template if:true={hasAutoFilledData}>
+
+                            <button
+                                class="slds-button slds-button_destructive clear-ai-filled-button"
+                                onclick={handleClearAllAIFilledData}
+                                type="button">
+
+                                Clear AI-filled data
+
+                            </button>
+
+                        </template>
 
                     </aside>
 

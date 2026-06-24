@@ -1,6 +1,23 @@
 import { LightningElement, api }
 from 'lwc';
 
+const FIELD_STATUS = {
+    AI_FILLED: 'AI-filled',
+    EDITED: 'Edited',
+    REVERTED: 'Reverted'
+};
+
+const FIELD_STATUS_LABELS = {
+    [FIELD_STATUS.AI_FILLED]: 'AI-filled',
+    [FIELD_STATUS.EDITED]: 'Edited',
+    [FIELD_STATUS.REVERTED]: 'Reverted to AI value'
+};
+
+const FIELD_STATUS_CLASSES = {
+    AI_FILLED: 'field-status-badge ai-filled',
+    EDITED: 'field-status-badge edited'
+};
+
 export default class FormField
     extends LightningElement {
 
@@ -68,6 +85,128 @@ export default class FormField
                 ?.toLowerCase()
 
         );
+
+    }
+
+    get containerClass() {
+
+        const classes =
+            [
+                'slds-form-element'
+            ];
+
+        if (
+
+            this.fieldConfig?.isAutoFilled === true
+
+        ) {
+
+            classes.push(
+                'is-ai-filled'
+            );
+
+        }
+
+        if (
+
+            this.fieldConfig?.isUserEdited === true
+
+        ) {
+
+            classes.push(
+                'is-user-edited'
+            );
+
+        }
+
+        return classes.join(
+            ' '
+        );
+
+    }
+
+    get hasFieldStatus() {
+
+        return this.fieldConfig?.isAutoFilled === true ||
+            this.fieldConfig?.isUserEdited === true ||
+            !!this.fieldConfig?.fieldStatus;
+
+    }
+
+    get fieldStatusLabel() {
+
+        if (
+
+            this.fieldConfig?.isUserEdited === true
+
+        ) {
+
+            return FIELD_STATUS_LABELS[FIELD_STATUS.EDITED];
+
+        }
+
+        if (
+
+            this.fieldConfig?.fieldStatus === FIELD_STATUS.REVERTED
+
+        ) {
+
+            return FIELD_STATUS_LABELS[FIELD_STATUS.REVERTED];
+
+        }
+
+        if (
+
+            this.fieldConfig?.isAutoFilled === true
+
+        ) {
+
+            return FIELD_STATUS_LABELS[FIELD_STATUS.AI_FILLED];
+
+        }
+
+        return FIELD_STATUS_LABELS[this.fieldConfig?.fieldStatus] ||
+            this.fieldConfig?.fieldStatus ||
+            '';
+
+    }
+
+    get fieldStatusClass() {
+
+        return this.fieldConfig?.isUserEdited === true
+            ? FIELD_STATUS_CLASSES.EDITED
+            : FIELD_STATUS_CLASSES.AI_FILLED;
+
+    }
+
+    get canRevertToAIValue() {
+
+        return this.fieldConfig?.isUserEdited === true &&
+            this.fieldConfig?.originalAIValue !== undefined;
+
+    }
+
+    get canUndo() {
+
+        return this.fieldConfig?.canUndo === true;
+
+    }
+
+    get canRedo() {
+
+        return this.fieldConfig?.canRedo === true;
+
+    }
+
+    get canUndoDisabled() {
+
+        return !this.canUndo;
+
+    }
+
+    get canRedoDisabled() {
+
+        return !this.canRedo;
 
     }
 
@@ -662,6 +801,63 @@ export default class FormField
                         this.fieldConfig.id,
 
                     value: value
+
+                }
+
+            })
+
+        );
+
+    }
+
+    handleRevertToAIValue() {
+
+        this.dispatchEvent(
+
+            new CustomEvent('revertaivalue', {
+
+                detail: {
+
+                    questionId:
+                        this.fieldConfig.id
+
+                }
+
+            })
+
+        );
+
+    }
+
+    handleUndoFieldValue() {
+
+        this.dispatchEvent(
+
+            new CustomEvent('undofieldvalue', {
+
+                detail: {
+
+                    questionId:
+                        this.fieldConfig.id
+
+                }
+
+            })
+
+        );
+
+    }
+
+    handleRedoFieldValue() {
+
+        this.dispatchEvent(
+
+            new CustomEvent('redofieldvalue', {
+
+                detail: {
+
+                    questionId:
+                        this.fieldConfig.id
 
                 }
 

@@ -21,7 +21,10 @@
                     <c-form-field
                         field-config={field}
                         current-value={field.currentValue}
-                        onvaluechange={handleFieldChange}>
+                        onvaluechange={handleFieldChange}
+                        onrevertaivalue={handleFieldRevert}
+                        onundofieldvalue={handleFieldUndo}
+                        onredofieldvalue={handleFieldRedo}>
                     </c-form-field>
 
                 </div>

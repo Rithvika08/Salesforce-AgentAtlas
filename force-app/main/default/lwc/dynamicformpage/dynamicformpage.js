@@ -193,6 +193,50 @@ export default class Dynamicformpage extends LightningElement {
                         field.Question_Id__c
                     ]?.sourceFields,
 
+                originalAIValue:
+
+                    this.formData[
+                        field.id ||
+                        field.Question_Id__c
+                    ]?.originalAIValue,
+
+                isAutoFilled:
+
+                    this.formData[
+                        field.id ||
+                        field.Question_Id__c
+                    ]?.isAutoFilled === true,
+
+                isUserEdited:
+
+                    this.formData[
+                        field.id ||
+                        field.Question_Id__c
+                    ]?.isUserEdited === true,
+
+                fieldStatus:
+
+                    this.formData[
+                        field.id ||
+                        field.Question_Id__c
+                    ]?.fieldStatus,
+
+                canUndo:
+
+                    this.canMoveFieldHistory(
+                        field.id ||
+                        field.Question_Id__c,
+                        -1
+                    ),
+
+                canRedo:
+
+                    this.canMoveFieldHistory(
+                        field.id ||
+                        field.Question_Id__c,
+                        1
+                    ),
+
                 sourceFieldsText:
 
                     this.sanitizeSourceFieldsText(
@@ -346,6 +390,102 @@ export default class Dynamicformpage extends LightningElement {
         });
 
         return allValid;
+
+    }
+
+    handleFieldRevert(event) {
+
+        this.dispatchEvent(
+
+            new CustomEvent('fieldrevert', {
+
+                detail:
+                    event.detail,
+
+                bubbles:
+                    true,
+
+                composed:
+                    true
+
+            })
+
+        );
+
+    }
+
+    handleFieldUndo(event) {
+
+        this.dispatchEvent(
+
+            new CustomEvent('fieldundo', {
+
+                detail:
+                    event.detail,
+
+                bubbles:
+                    true,
+
+                composed:
+                    true
+
+            })
+
+        );
+
+    }
+
+    handleFieldRedo(event) {
+
+        this.dispatchEvent(
+
+            new CustomEvent('fieldredo', {
+
+                detail:
+                    event.detail,
+
+                bubbles:
+                    true,
+
+                composed:
+                    true
+
+            })
+
+        );
+
+    }
+
+    canMoveFieldHistory(questionId, direction) {
+
+        const fieldData =
+            this.formData[questionId];
+
+        if (
+
+            !fieldData ||
+            !Array.isArray(
+                fieldData.valueHistory
+            )
+
+        ) {
+
+            return false;
+
+        }
+
+        const currentIndex =
+            Number.isInteger(
+                fieldData.valueHistoryIndex
+            )
+                ? fieldData.valueHistoryIndex
+                : fieldData.valueHistory.length - 1;
+
+        const nextIndex =
+            currentIndex + direction;
+
+        return nextIndex >= 0 &&
+            nextIndex < fieldData.valueHistory.length;
 
     }
 

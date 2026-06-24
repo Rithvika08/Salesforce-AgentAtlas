@@ -13,6 +13,20 @@ from '@salesforce/apex/AcademicFormController.saveFormDraft';
 import submitForm
 from '@salesforce/apex/AcademicFormController.submitForm';
 
+import logChatDecision
+from '@salesforce/apex/AIFormFillLogger.logChatDecision';
+
+const FIELD_STATUS = {
+    AI_FILLED: 'AI-filled',
+    EDITED: 'Edited',
+    REVERTED: 'Reverted'
+};
+
+const FIELD_MODIFIED_BY = {
+    AI: 'AI',
+    USER: 'User'
+};
+
 export default class AcademicApplicationForm
     extends LightningElement {
 
@@ -62,6 +76,18 @@ export default class AcademicApplicationForm
     // TOTAL PAGES
 
     totalPages = 5;
+
+    get hasAutoFilledData() {
+
+        return Object.values(
+            this.formData || {}
+        ).some(fieldData => {
+
+            return fieldData?.isAutoFilled === true;
+
+        });
+
+    }
 
     // LOAD FORM
 
@@ -205,6 +231,8 @@ export default class AcademicApplicationForm
                         this.sourceBreakdown
                     );
 
+                this.clearMessagesForCurrentValues();
+
                 if (
 
                     sanitizedDraft.changed
@@ -252,6 +280,23 @@ export default class AcademicApplicationForm
         const value =
             event.detail.value;
 
+        const existingFieldData =
+            this.formData[fieldId] || {};
+
+        const wasAutoFilled =
+            existingFieldData.isAutoFilled === true;
+
+        const originalAIValue =
+            existingFieldData.originalAIValue !== undefined
+                ? existingFieldData.originalAIValue
+                : existingFieldData.value;
+
+        const historyState =
+            this.appendFieldHistory(
+                existingFieldData,
+                value
+            );
+
         // UPDATE DATA
 
         this.formData = {
@@ -260,11 +305,54 @@ export default class AcademicApplicationForm
 
             [fieldId]: {
 
-                value: value
+                ...existingFieldData,
+
+                value:
+                    value,
+
+                originalAIValue:
+                    originalAIValue,
+
+                isAutoFilled:
+                    wasAutoFilled,
+
+                isUserEdited:
+                    wasAutoFilled,
+
+                lastModifiedBy:
+                    FIELD_MODIFIED_BY.USER,
+
+                fieldStatus:
+                    wasAutoFilled
+                        ? FIELD_STATUS.EDITED
+                        : existingFieldData.fieldStatus,
+
+                userEditedAt:
+                    new Date().toISOString(),
+
+                valueHistory:
+                    historyState.history,
+
+                valueHistoryIndex:
+                    historyState.index
 
             }
 
         };
+
+        if (
+
+            wasAutoFilled
+
+        ) {
+
+            this.logUserFieldModification(
+                fieldId,
+                existingFieldData,
+                value
+            );
+
+        }
 
         this.saveLocalDraftBackup();
 
@@ -338,6 +426,17 @@ export default class AcademicApplicationForm
                 filledData
             );
 
+        const aiMergeResult =
+            this.buildAIMergedFormData(
+                filledData
+            );
+
+        const appliedFilledData =
+            aiMergeResult.appliedFilledData;
+
+        const skippedEditedFieldIds =
+            aiMergeResult.skippedEditedFieldIds;
+
         console.log(
             'AI FILLED:',
             JSON.stringify(
@@ -368,9 +467,33 @@ export default class AcademicApplicationForm
 
         this.clearFieldAIMessages(
             Object.keys(
-                filledData
+                appliedFilledData
             )
         );
+
+        if (
+
+            skippedEditedFieldIds.length > 0
+
+        ) {
+
+            this.saveStatus =
+                'AI kept your edited fields unchanged.';
+
+            setTimeout(() => {
+
+                if (
+                    this.saveStatus ===
+                    'AI kept your edited fields unchanged.'
+                ) {
+
+                    this.saveStatus = '';
+
+                }
+
+            }, 2500);
+
+        }
 
         if (
 
@@ -392,7 +515,7 @@ export default class AcademicApplicationForm
         if (
 
             Object.keys(
-                filledData
+                appliedFilledData
             ).length === 0
 
         ) {
@@ -408,16 +531,14 @@ export default class AcademicApplicationForm
         // MERGE DATA
 
         const sanitizedMergedData =
-            this.sanitizeFormData({
-
-                ...this.formData,
-
-                ...filledData
-
-            }).data;
+            this.sanitizeFormData(
+                aiMergeResult.formData
+            ).data;
 
         this.formData =
             sanitizedMergedData;
+
+        this.clearMessagesForCurrentValues();
 
         this.sourceBreakdown =
             this.buildSourceBreakdown(
@@ -449,11 +570,277 @@ export default class AcademicApplicationForm
 
         this.refreshAIFieldValidity(
             Object.keys(
-                filledData
+                appliedFilledData
             )
         );
 
         // AUTO SAVE
+
+        this.handleAutoSave();
+
+    }
+
+    buildAIMergedFormData(filledData = {}) {
+
+        const nextFormData = {
+
+            ...this.formData
+
+        };
+
+        const appliedFilledData = {};
+
+        const skippedEditedFieldIds = [];
+
+        Object.keys(
+            filledData || {}
+        ).forEach(questionId => {
+
+            const existingFieldData =
+                this.formData[questionId] || {};
+
+            if (
+
+                existingFieldData.isUserEdited === true
+
+            ) {
+
+                skippedEditedFieldIds.push(
+                    questionId
+                );
+
+                return;
+
+            }
+
+            const fieldData =
+                filledData[questionId] || {};
+
+            const originalAIValue =
+                fieldData.value;
+
+            const historyState =
+                this.appendFieldHistory(
+                    existingFieldData,
+                    fieldData.value
+                );
+
+            const mergedFieldData = {
+
+                ...existingFieldData,
+
+                ...fieldData,
+
+                value:
+                    fieldData.value,
+
+                originalAIValue:
+                    originalAIValue,
+
+                isAutoFilled:
+                    true,
+
+                isUserEdited:
+                    false,
+
+                lastModifiedBy:
+                    FIELD_MODIFIED_BY.AI,
+
+                fieldStatus:
+                    FIELD_STATUS.AI_FILLED,
+
+                autoFilledAt:
+                    new Date().toISOString(),
+
+                valueHistory:
+                    historyState.history,
+
+                valueHistoryIndex:
+                    historyState.index
+
+            };
+
+            nextFormData[questionId] =
+                mergedFieldData;
+
+            appliedFilledData[questionId] =
+                mergedFieldData;
+
+        });
+
+        return {
+            formData:
+                nextFormData,
+            appliedFilledData:
+                appliedFilledData,
+            skippedEditedFieldIds:
+                skippedEditedFieldIds
+        };
+
+    }
+
+    appendFieldHistory(fieldData = {}, nextValue) {
+
+        const existingHistory =
+            Array.isArray(
+                fieldData.valueHistory
+            ) &&
+            fieldData.valueHistory.length > 0
+                ? fieldData.valueHistory
+                : [
+                    fieldData.value
+                ];
+
+        const currentIndex =
+            Number.isInteger(
+                fieldData.valueHistoryIndex
+            )
+                ? fieldData.valueHistoryIndex
+                : existingHistory.length - 1;
+
+        const trimmedHistory =
+            existingHistory.slice(
+                0,
+                currentIndex + 1
+            );
+
+        const currentValue =
+            trimmedHistory[
+                trimmedHistory.length - 1
+            ];
+
+        if (
+
+            currentValue === nextValue
+
+        ) {
+
+            return {
+                history:
+                    trimmedHistory,
+                index:
+                    trimmedHistory.length - 1
+            };
+
+        }
+
+        const history =
+            [
+                ...trimmedHistory,
+                nextValue
+            ];
+
+        return {
+            history:
+                history,
+            index:
+                history.length - 1
+        };
+
+    }
+
+    moveFieldHistory(questionId, direction) {
+
+        const existingFieldData =
+            this.formData[questionId];
+
+        if (
+
+            !existingFieldData ||
+            !Array.isArray(
+                existingFieldData.valueHistory
+            )
+
+        ) {
+
+            return;
+
+        }
+
+        const currentIndex =
+            Number.isInteger(
+                existingFieldData.valueHistoryIndex
+            )
+                ? existingFieldData.valueHistoryIndex
+                : existingFieldData.valueHistory.length - 1;
+
+        const nextIndex =
+            currentIndex + direction;
+
+        if (
+
+            nextIndex < 0 ||
+            nextIndex >= existingFieldData.valueHistory.length
+
+        ) {
+
+            return;
+
+        }
+
+        const nextValue =
+            existingFieldData.valueHistory[nextIndex];
+
+        this.formData = {
+
+            ...this.formData,
+
+            [questionId]: {
+
+                ...existingFieldData,
+
+                value:
+                    nextValue,
+
+                isUserEdited:
+                    existingFieldData.isAutoFilled === true &&
+                    nextValue !== existingFieldData.originalAIValue,
+
+                lastModifiedBy:
+                    FIELD_MODIFIED_BY.USER,
+
+                fieldStatus:
+                    existingFieldData.isAutoFilled === true &&
+                    nextValue !== existingFieldData.originalAIValue
+                        ? FIELD_STATUS.EDITED
+                        : existingFieldData.isAutoFilled === true
+                            ? FIELD_STATUS.REVERTED
+                            : existingFieldData.fieldStatus,
+
+                valueHistoryIndex:
+                    nextIndex,
+
+                historyMovedAt:
+                    new Date().toISOString()
+
+            }
+
+        };
+
+        this.sourceBreakdown =
+            this.buildSourceBreakdown(
+                this.formData
+            );
+
+        this.sourceBreakdownByQuestion =
+            this.buildSourceBreakdownByQuestion(
+                this.sourceBreakdown
+            );
+
+        this.clearFieldAIMessage(
+            questionId
+        );
+
+        this.saveLocalDraftBackup();
+
+        this.logUserFieldModification(
+            questionId,
+            existingFieldData,
+            nextValue,
+            direction < 0
+                ? 'User undid a field value change before submission.'
+                : 'User redid a field value change before submission.'
+        );
 
         this.handleAutoSave();
 
@@ -489,6 +876,9 @@ export default class AcademicApplicationForm
                 questionId &&
                 typeof message === 'string' &&
                 message.trim() &&
+                !this.hasNonBlankFieldValue(
+                    questionId
+                ) &&
                 !this.isCheckboxField(
                     fieldConfig
                 )
@@ -503,6 +893,39 @@ export default class AcademicApplicationForm
             return messages;
 
         }, {});
+
+    }
+
+    hasNonBlankFieldValue(questionId) {
+
+        const value =
+            this.formData[questionId]?.value;
+
+        if (
+
+            value === null ||
+            value === undefined
+
+        ) {
+
+            return false;
+
+        }
+
+        if (
+
+            typeof value === 'boolean'
+
+        ) {
+
+            return value === true;
+
+        }
+
+        return String(
+            value
+        )
+            .trim() !== '';
 
     }
 
@@ -661,6 +1084,345 @@ export default class AcademicApplicationForm
                 nextMessages;
 
         }
+
+    }
+
+    clearMessagesForCurrentValues() {
+
+        const nextMessages = {
+
+            ...this.aiFieldMessages
+
+        };
+
+        let changed = false;
+
+        Object.keys(
+            nextMessages
+        ).forEach(questionId => {
+
+            if (
+
+                this.hasNonBlankFieldValue(
+                    questionId
+                )
+
+            ) {
+
+                delete nextMessages[questionId];
+                changed = true;
+
+            }
+
+        });
+
+        if (
+
+            changed
+
+        ) {
+
+            this.aiFieldMessages =
+                nextMessages;
+
+        }
+
+    }
+
+    handleFieldRevert(event) {
+
+        const questionId =
+            event.detail?.questionId;
+
+        if (
+
+            !questionId ||
+            !this.formData[questionId]
+
+        ) {
+
+            return;
+
+        }
+
+        const existingFieldData =
+            this.formData[questionId];
+
+        if (
+
+            existingFieldData.originalAIValue === undefined
+
+        ) {
+
+            return;
+
+        }
+
+        const historyState =
+            this.appendFieldHistory(
+                existingFieldData,
+                existingFieldData.originalAIValue
+            );
+
+        this.formData = {
+
+            ...this.formData,
+
+            [questionId]: {
+
+                ...existingFieldData,
+
+                value:
+                    existingFieldData.originalAIValue,
+
+                isAutoFilled:
+                    true,
+
+                isUserEdited:
+                    false,
+
+                lastModifiedBy:
+                    FIELD_MODIFIED_BY.AI,
+
+                fieldStatus:
+                    FIELD_STATUS.REVERTED,
+
+                revertedAt:
+                    new Date().toISOString(),
+
+                valueHistory:
+                    historyState.history,
+
+                valueHistoryIndex:
+                    historyState.index
+
+            }
+
+        };
+
+        this.clearFieldAIMessage(
+            questionId
+        );
+
+        this.saveLocalDraftBackup();
+
+        this.logUserFieldModification(
+            questionId,
+            existingFieldData,
+            existingFieldData.originalAIValue,
+            'User reverted field to original AI-filled value.'
+        );
+
+        this.handleAutoSave();
+
+    }
+
+    handleFieldUndo(event) {
+
+        this.moveFieldHistory(
+            event.detail?.questionId,
+            -1
+        );
+
+    }
+
+    handleFieldRedo(event) {
+
+        this.moveFieldHistory(
+            event.detail?.questionId,
+            1
+        );
+
+    }
+
+    handleClearAllAIFilledData() {
+
+        const aiFilledFieldIds =
+            Object.keys(
+                this.formData || {}
+            ).filter(questionId => {
+
+                return this.formData[questionId]?.isAutoFilled === true;
+
+            });
+
+        if (
+
+            aiFilledFieldIds.length === 0
+
+        ) {
+
+            this.saveStatus =
+                'No AI-filled data to clear.';
+
+            return;
+
+        }
+
+        this.clearAIFilledFields(
+            aiFilledFieldIds
+        );
+
+    }
+
+    clearAIFilledFields(questionIds) {
+
+        if (
+
+            !Array.isArray(
+                questionIds
+            ) ||
+            questionIds.length === 0
+
+        ) {
+
+            return;
+
+        }
+
+        const nextFormData = {
+
+            ...this.formData
+
+        };
+
+        questionIds.forEach(questionId => {
+
+            const existingFieldData =
+                nextFormData[questionId] || {};
+
+            const clearedValue =
+                this.isCheckboxField(
+                    this.schemaQuestions.find(field => {
+
+                        return field.id === questionId;
+
+                    })
+                )
+                    ? false
+                    : '';
+
+            const historyState =
+                this.appendFieldHistory(
+                    existingFieldData,
+                    clearedValue
+                );
+
+            nextFormData[questionId] = {
+
+                ...existingFieldData,
+
+                value:
+                    clearedValue,
+
+                isAutoFilled:
+                    false,
+
+                isUserEdited:
+                    false,
+
+                lastModifiedBy:
+                    FIELD_MODIFIED_BY.USER,
+
+                fieldStatus:
+                    undefined,
+
+                clearedAt:
+                    new Date().toISOString(),
+
+                valueHistory:
+                    historyState.history,
+
+                valueHistoryIndex:
+                    historyState.index
+
+            };
+
+            this.logUserFieldModification(
+                questionId,
+                existingFieldData,
+                '',
+                'User cleared AI-filled value before submission.'
+            );
+
+        });
+
+        this.formData =
+            nextFormData;
+
+        this.clearFieldAIMessages(
+            questionIds
+        );
+
+        this.sourceBreakdown =
+            this.buildSourceBreakdown(
+                this.formData
+            );
+
+        this.sourceBreakdownByQuestion =
+            this.buildSourceBreakdownByQuestion(
+                this.sourceBreakdown
+            );
+
+        this.saveLocalDraftBackup();
+
+        this.saveStatus =
+            'Cleared AI-filled data.';
+
+        this.handleAutoSave();
+
+    }
+
+    logUserFieldModification(
+        questionId,
+        previousFieldData = {},
+        newValue,
+        reason = 'User modified auto-filled value before submission.'
+    ) {
+
+        const fieldConfig =
+            this.schemaQuestions.find(field => {
+
+                return field.id === questionId;
+
+            });
+
+        logChatDecision({
+            action:
+                'replace',
+            status:
+                'Success',
+            questionId:
+                questionId || '',
+            questionLabel:
+                fieldConfig?.label || questionId || '',
+            source:
+                'User Review',
+            confidence:
+                previousFieldData.confidence === undefined ||
+                previousFieldData.confidence === null
+                    ? null
+                    : previousFieldData.confidence,
+            reason:
+                reason,
+            value:
+                newValue === undefined || newValue === null
+                    ? ''
+                    : String(
+                        newValue
+                    ),
+            durationMs:
+                null,
+            formSubmissionId:
+                this.submissionId || null
+        }).catch(error => {
+
+            console.warn(
+                'User field modification logging skipped',
+                error?.body?.message || error?.message || error
+            );
+
+        });
 
     }
 
@@ -2360,6 +3122,8 @@ export default class AcademicApplicationForm
                 this.buildSourceBreakdownByQuestion(
                     this.sourceBreakdown
                 );
+
+            this.clearMessagesForCurrentValues();
 
             this.saveStatus =
                 'Restored unsaved draft from this browser.';

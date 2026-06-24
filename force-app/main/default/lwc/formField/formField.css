@@ -36,6 +36,114 @@ lightning-helptext {
 
     position: relative;
 
+    border-left: 3px solid transparent;
+
+    padding-left: 0.4rem;
+
+}
+
+.slds-form-element.is-ai-filled {
+
+    border-left-color: var(--slds-g-color-brand-base-50);
+
+}
+
+.slds-form-element.is-user-edited {
+
+    border-left-color: var(--slds-g-color-warning-base-50);
+
+}
+
+.ai-field-state-row {
+
+    align-items: center;
+
+    display: flex;
+
+    gap: 0.5rem;
+
+    margin-bottom: 0.25rem;
+
+}
+
+.field-status-badge {
+
+    border-radius: 999px;
+
+    font-size: 0.68rem;
+
+    font-weight: 700;
+
+    letter-spacing: 0.01em;
+
+    line-height: 1;
+
+    padding: 0.25rem 0.45rem;
+
+}
+
+.field-status-badge.ai-filled {
+
+    background: var(--slds-g-color-brand-base-95);
+
+    color: var(--slds-g-color-brand-base-30);
+
+}
+
+.field-status-badge.edited {
+
+    background: var(--slds-g-color-warning-base-95);
+
+    color: var(--slds-g-color-warning-base-30);
+
+}
+
+.revert-ai-value-button {
+
+    background: transparent;
+
+    border: 0;
+
+    color: var(--slds-g-color-brand-base-40);
+
+    cursor: pointer;
+
+    font-size: 0.72rem;
+
+    padding: 0;
+
+    text-decoration: underline;
+
+}
+
+.field-history-button {
+
+    background: var(--slds-g-color-neutral-base-100);
+
+    border: 1px solid var(--slds-g-color-border-base-1);
+
+    border-radius: 0.25rem;
+
+    color: var(--slds-g-color-brand-base-40);
+
+    cursor: pointer;
+
+    font-size: 0.72rem;
+
+    line-height: 1;
+
+    padding: 0.25rem 0.45rem;
+
+}
+
+.field-history-button:disabled {
+
+    color: var(--slds-g-color-neutral-base-50);
+
+    cursor: not-allowed;
+
+    opacity: 0.55;
+
 }
 
 .source-fields-used {

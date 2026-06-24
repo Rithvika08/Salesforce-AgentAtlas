@@ -1,6 +1,55 @@
 <template>
 
-    <div class="slds-form-element">
+    <div class={containerClass}>
+
+        <template if:true={hasFieldStatus}>
+
+            <div class="ai-field-state-row">
+
+                <span class={fieldStatusClass}>
+
+                    {fieldStatusLabel}
+
+                </span>
+
+                <template if:true={canRevertToAIValue}>
+
+                    <button
+                        class="revert-ai-value-button"
+                        onclick={handleRevertToAIValue}
+                        type="button">
+
+                        Revert to AI value
+
+                    </button>
+
+                </template>
+
+                <button
+                    class="field-history-button"
+                    disabled={canUndoDisabled}
+                    onclick={handleUndoFieldValue}
+                    title="Undo last change"
+                    type="button">
+
+                    Undo
+
+                </button>
+
+                <button
+                    class="field-history-button"
+                    disabled={canRedoDisabled}
+                    onclick={handleRedoFieldValue}
+                    title="Redo last undone change"
+                    type="button">
+
+                    Redo
+
+                </button>
+
+            </div>
+
+        </template>
 
         <!-- PICKLIST -->
 

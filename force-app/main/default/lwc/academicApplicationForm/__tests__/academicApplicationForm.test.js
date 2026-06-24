@@ -65,6 +65,18 @@ jest.mock(
     { virtual: true }
 );
 
+jest.mock(
+    '@salesforce/apex/AIFormFillLogger.logChatDecision',
+
+    () => {
+        return {
+            default: jest.fn()
+        };
+    },
+
+    { virtual: true }
+);
+
 describe('c-academic-application-form', () => {
 
     afterEach(() => {
