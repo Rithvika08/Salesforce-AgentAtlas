@@ -4,9 +4,11 @@ export default class ApplicationProgressSidebar extends LightningElement {
 
     @api currentPage = 1;
 
+    @api totalPages = 5;
+
     get steps() {
 
-        return [
+        const steps = [
 
             {
                 id: 1,
@@ -44,6 +46,19 @@ export default class ApplicationProgressSidebar extends LightningElement {
             }
 
         ];
+
+        if (Number(this.totalPages) >= 6) {
+
+            steps.push({
+                id: 6,
+                label: 'Admin Review',
+                completed: false,
+                circleClass: this.getClass(6)
+            });
+
+        }
+
+        return steps;
 
     }
 

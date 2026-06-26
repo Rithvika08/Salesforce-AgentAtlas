@@ -1,5 +1,8 @@
 public without sharing class AcademicFormController {
 
+    private static final Integer STUDENT_TOTAL_PAGES = 5;
+    private static final Integer ADMIN_REVIEW_PAGE = 6;
+
     // LOAD FORM CONFIGURATION
     
     @AuraEnabled
@@ -8,6 +11,9 @@ public without sharing class AcademicFormController {
     
         List<Map<String, Object>> result =
             new List<Map<String, Object>>();
+
+        Boolean hasAdminReviewMetadata =
+            false;
     
         List<Form_Configuration_c__mdt> configs = [
     
@@ -150,11 +156,224 @@ public without sharing class AcademicFormController {
             );
     
             result.add(fieldMap);
+
+            if (
+                isAdminReviewQuestion(
+                    config.Question_Id__c
+                )
+            ) {
+
+                hasAdminReviewMetadata =
+                    true;
+
+            }
     
+        }
+
+        if (
+            canUseAdminApplicationContext() &&
+            !hasAdminReviewMetadata
+        ) {
+
+            result.addAll(
+                buildAdminReviewConfiguration()
+            );
+
         }
     
         return result;
     
+    }
+
+    private static Boolean isAdminReviewQuestion(
+
+        String questionId
+
+    ) {
+
+        return !String.isBlank(
+            questionId
+        ) &&
+            questionId
+                .toLowerCase()
+                .startsWith(
+                    'admin_'
+                );
+
+    }
+
+    @AuraEnabled(cacheable=true)
+    public static Boolean canUseAdminApplicationContext() {
+
+        return Schema.sObjectType.Academic_Application__c.isAccessible() &&
+            Schema.sObjectType.Academic_Application__c.fields.Applicant__c.isAccessible() &&
+            Schema.sObjectType.Academic_Application__c.fields.Decision_Status__c.isAccessible() &&
+            Schema.sObjectType.Academic_Application__c.fields.Admin_Review_Comments__c.isAccessible();
+
+    }
+
+    @AuraEnabled(cacheable=true)
+    public static Boolean canAccessAcademicApplication(Id applicationId) {
+
+        if (
+            applicationId == null ||
+            !canUseAdminApplicationContext()
+        ) {
+
+            return false;
+
+        }
+
+        List<Academic_Application__c> applications = [
+            SELECT Id
+            FROM Academic_Application__c
+            WHERE Id = :applicationId
+            WITH USER_MODE
+            LIMIT 1
+        ];
+
+        return !applications.isEmpty();
+
+    }
+
+    private static List<Map<String, Object>> buildAdminReviewConfiguration() {
+
+        List<Map<String, Object>> fields =
+            new List<Map<String, Object>>();
+
+        fields.add(
+            buildAdminField(
+                'admin_decision_status',
+                'Decision Status',
+                'picklist',
+                1,
+                false,
+                'Pending Review,Approved,Rejected,Waitlisted',
+                'Academic_Application__c',
+                'Decision_Status__c'
+            )
+        );
+
+        fields.add(
+            buildAdminField(
+                'admin_admission_granted',
+                'Admission Granted',
+                'checkbox',
+                2,
+                false,
+                null,
+                'Academic_Application__c',
+                'Admission_Granted__c'
+            )
+        );
+
+        fields.add(
+            buildAdminField(
+                'admin_review_comments',
+                'Admin Review Comments',
+                'textarea',
+                3,
+                false,
+                null,
+                'Academic_Application__c',
+                'Admin_Review_Comments__c'
+            )
+        );
+
+        fields.add(
+            buildAdminField(
+                'admin_approval_comments',
+                'Approval Decision Comments',
+                'textarea',
+                4,
+                false,
+                null,
+                'Academic_Application__c',
+                'Approval_Decision_Comments__c'
+            )
+        );
+
+        fields.add(
+            buildAdminField(
+                'admin_rejection_comments',
+                'Rejection Comments',
+                'textarea',
+                5,
+                false,
+                null,
+                'Academic_Application__c',
+                'Rejection_Comments__c'
+            )
+        );
+
+        fields.add(
+            buildAdminField(
+                'admin_reviewer_notes',
+                'Reviewer Notes',
+                'textarea',
+                6,
+                false,
+                null,
+                'Academic_Application__c',
+                'Reviewer_Notes__c'
+            )
+        );
+
+        fields.add(
+            buildAdminField(
+                'admin_decision_date',
+                'Decision Date',
+                'date',
+                7,
+                false,
+                null,
+                'Academic_Application__c',
+                'Decision_Date__c'
+            )
+        );
+
+        return fields;
+
+    }
+
+    private static Map<String, Object> buildAdminField(
+        String questionId,
+        String label,
+        String type,
+        Integer displayOrder,
+        Boolean required,
+        String picklistValues,
+        String objectApiName,
+        String fieldApiName
+    ) {
+
+        Map<String, Object> fieldMap =
+            new Map<String, Object>();
+
+        fieldMap.put('id', questionId);
+        fieldMap.put('label', label);
+        fieldMap.put('type', type);
+        fieldMap.put('page', ADMIN_REVIEW_PAGE);
+        fieldMap.put('displayOrder', displayOrder);
+        fieldMap.put('required', required);
+        fieldMap.put('helpText', 'Admin-only review field.');
+        fieldMap.put('validationRule', null);
+        fieldMap.put('picklistValues', picklistValues);
+        fieldMap.put('isAdminOnly', true);
+        fieldMap.put('objectApiName', objectApiName);
+        fieldMap.put('fieldApiName', fieldApiName);
+        fieldMap.put('MasterLabel', label);
+        fieldMap.put('Question_Type__c', type);
+        fieldMap.put('Question_Id__c', questionId);
+        fieldMap.put('Page_Number__c', ADMIN_REVIEW_PAGE);
+        fieldMap.put('Display_Order__c', displayOrder);
+        fieldMap.put('Is_Required__c', required);
+        fieldMap.put('Help_Text__c', 'Admin-only review field.');
+        fieldMap.put('Validation_Rule__c', null);
+        fieldMap.put('Picklist_Values__c', picklistValues);
+
+        return fieldMap;
+
     }
     
     // LOAD FORM DRAFT
@@ -280,6 +499,311 @@ public without sharing class AcademicFormController {
         return result;
     
     }
+
+    @AuraEnabled
+    public static Map<String, Object>
+    loadFormSubmission(Id submissionId) {
+
+        Map<String, Object> result =
+            new Map<String, Object>();
+
+        if (
+            submissionId == null
+        ) {
+
+            return result;
+
+        }
+
+        Form_Submission__c submission = [
+
+            SELECT
+                Id,
+                Current_Page__c,
+                Status__c,
+                User__c,
+                Academic_Application__c,
+                (
+                    SELECT
+                        Id,
+                        Question_Id__c,
+                        Response_Value__c
+                    FROM Form_Responses__r
+                )
+
+            FROM Form_Submission__c
+
+            WHERE Id = :submissionId
+
+            LIMIT 1
+
+        ];
+
+        if (
+            submission.Academic_Application__c == null &&
+            submission.Status__c == 'Submitted'
+        ) {
+
+            Id createdApplicationId =
+                ensureAcademicApplicationForSubmission(
+                    submission
+                );
+
+            if (
+                createdApplicationId != null
+            ) {
+
+                update submission;
+
+            }
+
+        }
+
+        String confidenceFieldApiName =
+            getFormResponseConfidenceFieldApiName();
+
+        Map<Id, Object> confidenceByResponseId =
+            getSavedResponseConfidenceById(
+                submission.Id,
+                confidenceFieldApiName
+            );
+
+        Map<String, Object> formData =
+            buildFormDataFromResponses(
+                submission.Form_Responses__r,
+                confidenceByResponseId,
+                confidenceFieldApiName
+            );
+
+        if (
+            submission.Academic_Application__c != null &&
+            canUseAdminApplicationContext()
+        ) {
+
+            addAcademicApplicationFormData(
+                formData,
+                submission.Academic_Application__c
+            );
+
+        }
+
+        result.put(
+            'submissionId',
+            submission.Id
+        );
+
+        result.put(
+            'academicApplicationId',
+            submission.Academic_Application__c
+        );
+
+        result.put(
+            'currentPage',
+            canUseAdminApplicationContext()
+                ? ADMIN_REVIEW_PAGE
+                : (
+                    submission.Current_Page__c == null
+                        ? 1
+                        : submission.Current_Page__c
+                )
+        );
+
+        result.put(
+            'formData',
+            formData
+        );
+
+        return result;
+
+    }
+
+    private static Map<String, Object> buildFormDataFromResponses(
+
+        List<Form_Response__c> responses,
+
+        Map<Id, Object> confidenceByResponseId,
+
+        String confidenceFieldApiName
+
+    ) {
+
+        Map<String, Object> formData =
+            new Map<String, Object>();
+
+        if (
+            responses == null
+        ) {
+
+            return formData;
+
+        }
+
+        for (
+            Form_Response__c response :
+            responses
+        ) {
+
+            Map<String, Object> valueObj =
+                new Map<String, Object>();
+
+            valueObj.put(
+                'value',
+                response.Response_Value__c
+            );
+
+            if (
+                confidenceByResponseId != null &&
+                confidenceByResponseId.containsKey(
+                    response.Id
+                )
+            ) {
+
+                valueObj.put(
+                    'confidence',
+                    normalizeStoredConfidenceForFormData(
+                        confidenceFieldApiName,
+                        confidenceByResponseId.get(
+                            response.Id
+                        )
+                    )
+                );
+
+            }
+
+            formData.put(
+                response.Question_Id__c,
+                valueObj
+            );
+
+        }
+
+        return formData;
+
+    }
+
+    private static void addAcademicApplicationFormData(
+
+        Map<String, Object> formData,
+
+        Id academicApplicationId
+
+    ) {
+
+        List<Academic_Application__c> applications = [
+
+            SELECT
+                Id,
+                Decision_Status__c,
+                Admission_Granted__c,
+                Admin_Review_Comments__c,
+                Approval_Decision_Comments__c,
+                Rejection_Comments__c,
+                Reviewer_Notes__c,
+                Decision_Date__c
+
+            FROM Academic_Application__c
+
+            WHERE Id = :academicApplicationId
+
+            WITH USER_MODE
+
+            LIMIT 1
+
+        ];
+
+        if (
+            applications.isEmpty()
+        ) {
+
+            return;
+
+        }
+
+        Academic_Application__c application =
+            applications[0];
+
+        putFormValue(
+            formData,
+            'admin_decision_status',
+            application.Decision_Status__c
+        );
+
+        putFormValue(
+            formData,
+            'admin_admission_granted',
+            application.Admission_Granted__c
+        );
+
+        putFormValue(
+            formData,
+            'admin_review_comments',
+            application.Admin_Review_Comments__c
+        );
+
+        putFormValue(
+            formData,
+            'admin_approval_comments',
+            application.Approval_Decision_Comments__c
+        );
+
+        putFormValue(
+            formData,
+            'admin_rejection_comments',
+            application.Rejection_Comments__c
+        );
+
+        putFormValue(
+            formData,
+            'admin_reviewer_notes',
+            application.Reviewer_Notes__c
+        );
+
+        putFormValue(
+            formData,
+            'admin_decision_date',
+            application.Decision_Date__c
+        );
+
+    }
+
+    private static void putFormValue(
+
+        Map<String, Object> formData,
+
+        String questionId,
+
+        Object value
+
+    ) {
+
+        if (
+            formData == null ||
+            String.isBlank(
+                questionId
+            ) ||
+            value == null ||
+            String.isBlank(
+                String.valueOf(
+                    value
+                )
+            )
+        ) {
+
+            return;
+
+        }
+
+        formData.put(
+            questionId,
+            new Map<String, Object>{
+                'value' => String.valueOf(
+                    value
+                ),
+                'confidence' => 1
+            }
+        );
+
+    }
     
     // SAVE FORM DRAFT
     
@@ -295,7 +819,9 @@ public without sharing class AcademicFormController {
     
         String formData,
     
-        String sessionId
+        String sessionId,
+
+        Id targetApplicationId
     
     ) {
     
@@ -331,10 +857,10 @@ public without sharing class AcademicFormController {
                         'Graduate Admission',
     
                     Total_Pages__c =
-                        5,
+                        STUDENT_TOTAL_PAGES,
     
                     Percent_Complete__c =
-                        (currentPage * 100) / 5,
+                        (currentPage * 100) / STUDENT_TOTAL_PAGES,
     
                     Started_Date__c =
                         System.now(),
@@ -376,10 +902,10 @@ public without sharing class AcademicFormController {
                 currentPage;
     
             submission.Total_Pages__c =
-                5;
+                STUDENT_TOTAL_PAGES;
     
             submission.Percent_Complete__c =
-                (currentPage * 100) / 5;
+                (currentPage * 100) / STUDENT_TOTAL_PAGES;
     
             submission.Last_Saved__c =
                 System.now();
@@ -442,6 +968,12 @@ public without sharing class AcademicFormController {
                     JSON.deserializeUntyped(
                         formData
                     );
+
+        saveAcademicApplicationAnswers(
+            targetApplicationId,
+            parsedData,
+            result
+        );
 
         String confidenceFieldApiName =
             getFormResponseConfidenceFieldApiName();
@@ -1181,6 +1713,286 @@ public without sharing class AcademicFormController {
         }
 
     }
+
+    private static void saveAcademicApplicationAnswers(
+
+        Id targetApplicationId,
+
+        Map<String, Object> parsedData,
+
+        Map<String, Object> result
+
+    ) {
+
+        if (
+            targetApplicationId == null ||
+            parsedData == null ||
+            parsedData.isEmpty() ||
+            !Schema.sObjectType.Academic_Application__c.isAccessible() ||
+            !Schema.sObjectType.Academic_Application__c.isUpdateable()
+        ) {
+
+            return;
+
+        }
+
+        List<Academic_Application__c> applications = [
+
+            SELECT
+                Id
+
+            FROM Academic_Application__c
+
+            WHERE Id = :targetApplicationId
+
+            WITH USER_MODE
+
+            LIMIT 1
+
+        ];
+
+        if (
+            applications.isEmpty()
+        ) {
+
+            result.put(
+                'academicApplicationSaveWarning',
+                'Selected academic application record was not accessible.'
+            );
+
+            return;
+
+        }
+
+        Academic_Application__c application =
+            applications[0];
+
+        setApplicationFieldValue(
+            application,
+            parsedData,
+            'admin_decision_status',
+            'Decision_Status__c',
+            Schema.sObjectType.Academic_Application__c.fields.Decision_Status__c
+        );
+
+        setApplicationFieldValue(
+            application,
+            parsedData,
+            'admin_admission_granted',
+            'Admission_Granted__c',
+            Schema.sObjectType.Academic_Application__c.fields.Admission_Granted__c
+        );
+
+        setApplicationFieldValue(
+            application,
+            parsedData,
+            'admin_review_comments',
+            'Admin_Review_Comments__c',
+            Schema.sObjectType.Academic_Application__c.fields.Admin_Review_Comments__c
+        );
+
+        setApplicationFieldValue(
+            application,
+            parsedData,
+            'admin_approval_comments',
+            'Approval_Decision_Comments__c',
+            Schema.sObjectType.Academic_Application__c.fields.Approval_Decision_Comments__c
+        );
+
+        setApplicationFieldValue(
+            application,
+            parsedData,
+            'admin_rejection_comments',
+            'Rejection_Comments__c',
+            Schema.sObjectType.Academic_Application__c.fields.Rejection_Comments__c
+        );
+
+        setApplicationFieldValue(
+            application,
+            parsedData,
+            'admin_reviewer_notes',
+            'Reviewer_Notes__c',
+            Schema.sObjectType.Academic_Application__c.fields.Reviewer_Notes__c
+        );
+
+        setApplicationFieldValue(
+            application,
+            parsedData,
+            'admin_decision_date',
+            'Decision_Date__c',
+            Schema.sObjectType.Academic_Application__c.fields.Decision_Date__c
+        );
+
+        SObjectAccessDecision decision =
+            Security.stripInaccessible(
+                AccessType.UPDATABLE,
+                new List<SObject>{
+                    application
+                }
+            );
+
+        List<SObject> sanitizedRecords =
+            decision.getRecords();
+
+        if (
+            sanitizedRecords.isEmpty()
+        ) {
+
+            return;
+
+        }
+
+        Database.SaveResult saveResult =
+            Database.update(
+                sanitizedRecords[0],
+                false
+            );
+
+        if (
+            !saveResult.isSuccess()
+        ) {
+
+            result.put(
+                'academicApplicationSaveWarning',
+                saveResult.getErrors().isEmpty()
+                    ? 'Academic application fields could not be saved.'
+                    : saveResult.getErrors()[0].getMessage()
+            );
+
+            return;
+
+        }
+
+        result.put(
+            'academicApplicationUpdated',
+            true
+        );
+
+    }
+
+    private static void setApplicationFieldValue(
+
+        Academic_Application__c application,
+
+        Map<String, Object> parsedData,
+
+        String questionId,
+
+        String fieldApiName,
+
+        Schema.DescribeFieldResult fieldDescribe
+
+    ) {
+
+        if (
+            application == null ||
+            parsedData == null ||
+            !parsedData.containsKey(
+                questionId
+            ) ||
+            fieldDescribe == null ||
+            !fieldDescribe.isUpdateable()
+        ) {
+
+            return;
+
+        }
+
+        Object rawValueObj =
+            parsedData.get(
+                questionId
+            );
+
+        if (
+            !(rawValueObj instanceof Map<String, Object>)
+        ) {
+
+            return;
+
+        }
+
+        Map<String, Object> valueObj =
+            (Map<String, Object>) rawValueObj;
+
+        Object rawValue =
+            valueObj.get(
+                'value'
+            );
+
+        Schema.DisplayType fieldType =
+            fieldDescribe.getType();
+
+        if (
+            rawValue == null ||
+            String.isBlank(
+                String.valueOf(
+                    rawValue
+                )
+            )
+        ) {
+
+            application.put(
+                fieldApiName,
+                null
+            );
+
+            return;
+
+        }
+
+        if (
+            fieldType == Schema.DisplayType.Boolean
+        ) {
+
+            application.put(
+                fieldApiName,
+                Boolean.valueOf(
+                    String.valueOf(
+                        rawValue
+                    )
+                )
+            );
+
+            return;
+
+        }
+
+        if (
+            fieldType == Schema.DisplayType.Date
+        ) {
+
+            try {
+
+                application.put(
+                    fieldApiName,
+                    Date.valueOf(
+                        String.valueOf(
+                            rawValue
+                        )
+                    )
+                );
+
+            } catch (Exception e) {
+
+                application.put(
+                    fieldApiName,
+                    null
+                );
+
+            }
+
+            return;
+
+        }
+
+        application.put(
+            fieldApiName,
+            String.valueOf(
+                rawValue
+            )
+        );
+
+    }
     
     // SUBMIT FORM
     
@@ -1205,7 +2017,9 @@ public without sharing class AcademicFormController {
     
                 Status__c,
     
-                User__c
+                User__c,
+
+                Academic_Application__c
     
             FROM Form_Submission__c
     
@@ -1225,10 +2039,15 @@ public without sharing class AcademicFormController {
             100;
     
         submission.Total_Pages__c =
-            5;
+            STUDENT_TOTAL_PAGES;
     
         submission.Last_Saved__c =
             System.now();
+
+        Id academicApplicationId =
+            ensureAcademicApplicationForSubmission(
+                submission
+            );
     
         update submission;
     
@@ -1236,9 +2055,132 @@ public without sharing class AcademicFormController {
             'submissionId',
             submission.Id
         );
+
+        if (
+            academicApplicationId != null
+        ) {
+
+            result.put(
+                'academicApplicationId',
+                academicApplicationId
+            );
+
+        }
     
         return result;
     
+    }
+
+    private static Id ensureAcademicApplicationForSubmission(
+
+        Form_Submission__c submission
+
+    ) {
+
+        if (
+            submission == null ||
+            submission.Academic_Application__c != null
+        ) {
+
+            return submission == null
+                ? null
+                : submission.Academic_Application__c;
+
+        }
+
+        Id applicantContactId =
+            getSubmissionUserContactId(
+                submission.User__c
+            );
+
+        if (
+            applicantContactId == null
+        ) {
+
+            return null;
+
+        }
+
+        Academic_Application__c application =
+            new Academic_Application__c(
+                Applicant__c =
+                    applicantContactId,
+                Decision_Status__c =
+                    'Pending Review',
+                Admission_Granted__c =
+                    false
+            );
+
+        Database.SaveResult saveResult =
+            Database.insert(
+                application,
+                false
+            );
+
+        if (
+            !saveResult.isSuccess()
+        ) {
+
+            System.debug(
+                LoggingLevel.WARN,
+                'Academic application was not created for submission ' +
+                submission.Id +
+                ': ' +
+                (
+                    saveResult.getErrors().isEmpty()
+                        ? 'Unknown error'
+                        : saveResult.getErrors()[0].getMessage()
+                )
+            );
+
+            return null;
+
+        }
+
+        submission.Academic_Application__c =
+            saveResult.getId();
+
+        return saveResult.getId();
+
+    }
+
+    private static Id getSubmissionUserContactId(
+
+        Id userId
+
+    ) {
+
+        if (
+            userId == null
+        ) {
+
+            return null;
+
+        }
+
+        List<User> users = [
+
+            SELECT
+                ContactId
+
+            FROM User
+
+            WHERE Id = :userId
+
+            LIMIT 1
+
+        ];
+
+        if (
+            users.isEmpty()
+        ) {
+
+            return null;
+
+        }
+
+        return users[0].ContactId;
+
     }
     
     }

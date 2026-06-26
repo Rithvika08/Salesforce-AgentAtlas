@@ -31,6 +31,8 @@ export default class AiFormFillerChat
 
     @api submissionId;
 
+    @api targetApplicationId;
+
     @track messages = [
         {
             id: 1,
@@ -361,7 +363,10 @@ export default class AiFormFillerChat
     async runAutoFillFromPrompt(prompt) {
 
         const result =
-            await fillFormWithAI();
+            await fillFormWithAI({
+                targetApplicationId:
+                    this.targetApplicationId || null
+            });
 
         const filledData =
             result?.filledFields || {};
@@ -3917,7 +3922,9 @@ export default class AiFormFillerChat
                                 .join(
                                     ','
                                 )
-                            : ''
+                            : '',
+                    targetApplicationId:
+                        this.targetApplicationId || null
                 });
 
             return result?.filledFields?.[field.id] || null;
@@ -4195,7 +4202,9 @@ export default class AiFormFillerChat
                         ? this.getFieldOptions(field)
                             .map(option => option.value || option.label)
                             .join(',')
-                        : ''
+                        : '',
+                targetApplicationId:
+                    this.targetApplicationId || null
             });
 
         const filledData =

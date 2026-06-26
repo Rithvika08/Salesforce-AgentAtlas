@@ -54,6 +54,30 @@
 
 }
 
+.record-page-layout {
+
+    grid-template-columns: minmax(12rem, 15rem) minmax(0, 1fr);
+
+    gap: 1.25rem;
+
+    padding: 1rem;
+
+}
+
+.record-page-layout .form-workspace {
+
+    grid-template-columns: minmax(28rem, 1fr) minmax(18rem, 24rem);
+
+    gap: 1.25rem;
+
+}
+
+.record-page-layout .ai-assistant-panel {
+
+    top: 0.75rem;
+
+}
+
 .clear-ai-filled-button {
 
     margin-top: 0.75rem;
@@ -61,6 +85,56 @@
     width: 100%;
 
     font-weight: 700;
+
+}
+
+.admin-application-context {
+
+    border: 1px solid var(--slds-g-color-border-base-1);
+
+    border-radius: 0.35rem;
+
+    margin-top: 0.75rem;
+
+    padding: 0.75rem;
+
+}
+
+.admin-application-context__label {
+
+    display: block;
+
+    font-size: 0.75rem;
+
+    font-weight: 700;
+
+    margin-bottom: 0.25rem;
+
+}
+
+.admin-application-context__input {
+
+    border: 1px solid var(--slds-g-color-border-base-1);
+
+    border-radius: 0.25rem;
+
+    min-height: 2rem;
+
+    padding: 0 0.5rem;
+
+    width: 100%;
+
+}
+
+.admin-application-context__hint {
+
+    color: var(--slds-g-color-neutral-base-40);
+
+    font-size: 0.72rem;
+
+    line-height: 1.3;
+
+    margin: 0.35rem 0 0;
 
 }
 
@@ -113,6 +187,34 @@
     .ai-assistant-panel {
 
         width: 100%;
+
+        position: static;
+
+    }
+
+    .record-page-layout {
+
+        grid-template-columns: 1fr;
+
+    }
+
+    .record-page-layout .sidebar {
+
+        overflow-x: auto;
+
+    }
+
+}
+
+@media (max-width: 1400px) {
+
+    .record-page-layout .form-workspace {
+
+        grid-template-columns: 1fr;
+
+    }
+
+    .record-page-layout .ai-assistant-panel {
 
         position: static;
 

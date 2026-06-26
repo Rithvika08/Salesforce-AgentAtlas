@@ -6,8 +6,17 @@ import AcademicApplicationForm
 import loadFormConfiguration
     from '@salesforce/apex/AcademicFormController.loadFormConfiguration';
 
+import canUseAdminApplicationContext
+    from '@salesforce/apex/AcademicFormController.canUseAdminApplicationContext';
+
+import canAccessAcademicApplication
+    from '@salesforce/apex/AcademicFormController.canAccessAcademicApplication';
+
 import loadFormDraft
     from '@salesforce/apex/AcademicFormController.loadFormDraft';
+
+import loadFormSubmission
+    from '@salesforce/apex/AcademicFormController.loadFormSubmission';
 
 import saveFormDraft
     from '@salesforce/apex/AcademicFormController.saveFormDraft';
@@ -30,7 +39,43 @@ jest.mock(
 );
 
 jest.mock(
+    '@salesforce/apex/AcademicFormController.canUseAdminApplicationContext',
+
+    () => {
+        return {
+            default: jest.fn()
+        };
+    },
+
+    { virtual: true }
+);
+
+jest.mock(
+    '@salesforce/apex/AcademicFormController.canAccessAcademicApplication',
+
+    () => {
+        return {
+            default: jest.fn()
+        };
+    },
+
+    { virtual: true }
+);
+
+jest.mock(
     '@salesforce/apex/AcademicFormController.loadFormDraft',
+
+    () => {
+        return {
+            default: jest.fn()
+        };
+    },
+
+    { virtual: true }
+);
+
+jest.mock(
+    '@salesforce/apex/AcademicFormController.loadFormSubmission',
 
     () => {
         return {
@@ -78,6 +123,14 @@ jest.mock(
 );
 
 describe('c-academic-application-form', () => {
+
+    beforeEach(() => {
+
+        canUseAdminApplicationContext.mockResolvedValue(false);
+        canAccessAcademicApplication.mockResolvedValue(false);
+        loadFormSubmission.mockResolvedValue(null);
+
+    });
 
     afterEach(() => {
 

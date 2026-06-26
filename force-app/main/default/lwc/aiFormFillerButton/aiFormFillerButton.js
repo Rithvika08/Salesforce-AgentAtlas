@@ -18,6 +18,8 @@ export default class AiFormFillerButton
 
     @api submissionId;
 
+    @api targetApplicationId;
+
     @track isProcessing = false;
 
     @track showResults = false;
@@ -75,7 +77,10 @@ export default class AiFormFillerButton
                 'Gathering data...';
 
             const result =
-                await fillFormWithAI();
+                await fillFormWithAI({
+                    targetApplicationId:
+                        this.targetApplicationId || null
+                });
 
             this.processingMessage =
                 'AI is filling your form...';

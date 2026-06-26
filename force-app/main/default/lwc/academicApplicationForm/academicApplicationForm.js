@@ -1,11 +1,20 @@
-import { LightningElement, track }
+import { LightningElement, api, track }
 from 'lwc';
 
 import loadFormConfiguration
 from '@salesforce/apex/AcademicFormController.loadFormConfiguration';
 
+import canUseAdminApplicationContext
+from '@salesforce/apex/AcademicFormController.canUseAdminApplicationContext';
+
+import canAccessAcademicApplication
+from '@salesforce/apex/AcademicFormController.canAccessAcademicApplication';
+
 import loadFormDraft
 from '@salesforce/apex/AcademicFormController.loadFormDraft';
+
+import loadFormSubmission
+from '@salesforce/apex/AcademicFormController.loadFormSubmission';
 
 import saveFormDraft
 from '@salesforce/apex/AcademicFormController.saveFormDraft';
@@ -29,6 +38,8 @@ const FIELD_MODIFIED_BY = {
 
 export default class AcademicApplicationForm
     extends LightningElement {
+
+    @api recordId;
 
     // FORM CONFIG
 
@@ -56,6 +67,14 @@ export default class AcademicApplicationForm
 
     @track aiFieldMessages = {};
 
+    @track canUseAdminApplicationContext = false;
+
+    @track adminApplicationId = '';
+
+    @track adminApplicationIdIsAccessible = false;
+
+    @track adminApplicationAccessMessage = '';
+
     // SUBMISSION
 
     @track isSubmitted = false;
@@ -76,6 +95,35 @@ export default class AcademicApplicationForm
     // TOTAL PAGES
 
     totalPages = 5;
+
+    get activeAdminApplicationId() {
+
+        return this.adminApplicationIdIsAccessible
+            ? this.adminApplicationId
+            : null;
+
+    }
+
+    get isSubmissionRecordMode() {
+
+        return !!this.recordId;
+
+    }
+
+    get showManualAdminApplicationInput() {
+
+        return this.canUseAdminApplicationContext &&
+            !this.isSubmissionRecordMode;
+
+    }
+
+    get applicationLayoutClass() {
+
+        return this.isSubmissionRecordMode
+            ? 'application-layout record-page-layout'
+            : 'application-layout';
+
+    }
 
     get hasAutoFilledData() {
 
@@ -102,6 +150,9 @@ export default class AcademicApplicationForm
     async initializeForm() {
 
         try {
+
+            this.canUseAdminApplicationContext =
+                await canUseAdminApplicationContext();
 
             // LOAD CONFIGURATION
 
@@ -174,6 +225,18 @@ export default class AcademicApplicationForm
 
                 });
 
+            this.totalPages =
+                Math.max(
+                    1,
+                    ...this.schemaQuestions.map(field => {
+
+                        return Number(
+                            field.page || 1
+                        );
+
+                    })
+                );
+
             console.log(
                 'SCHEMA:',
                 JSON.stringify(
@@ -181,11 +244,15 @@ export default class AcademicApplicationForm
                 )
             );
 
-            // LOAD DRAFT
+            // LOAD SUBMISSION RECORD OR CURRENT USER DRAFT
 
             const draftResult =
-
-                await loadFormDraft();
+                this.isSubmissionRecordMode
+                    ? await loadFormSubmission({
+                        submissionId:
+                            this.recordId
+                    })
+                    : await loadFormDraft();
 
             console.log(
                 'DRAFT:',
@@ -198,6 +265,18 @@ export default class AcademicApplicationForm
 
                 this.submissionId =
                     draftResult.submissionId;
+
+                if (
+                    draftResult.academicApplicationId
+                ) {
+
+                    this.adminApplicationId =
+                        draftResult.academicApplicationId;
+                    this.adminApplicationIdIsAccessible = true;
+                    this.adminApplicationAccessMessage =
+                        'Loaded from this form submission record.';
+
+                }
 
                 this.currentPage =
                     draftResult.currentPage || 1;
@@ -246,6 +325,7 @@ export default class AcademicApplicationForm
             }
 
             if (
+                !this.isSubmissionRecordMode &&
                 !this.hasStoredFormData(
                     this.formData
                 )
@@ -384,6 +464,53 @@ export default class AcademicApplicationForm
                 this.handleAutoSave();
 
             }, 1000);
+
+    }
+
+    async handleAdminApplicationIdChange(event) {
+
+        this.adminApplicationId =
+            event.target.value
+                ? event.target.value.trim()
+                : '';
+
+        this.adminApplicationIdIsAccessible = false;
+        this.adminApplicationAccessMessage = '';
+
+        if (
+            !this.adminApplicationId
+        ) {
+
+            return;
+
+        }
+
+        try {
+
+            const hasAccess =
+                await canAccessAcademicApplication({
+                    applicationId:
+                        this.adminApplicationId
+                });
+
+            this.adminApplicationIdIsAccessible =
+                hasAccess === true;
+
+            this.adminApplicationAccessMessage =
+                hasAccess
+                    ? 'Application selected. AI will use this application and its applicant Contact.'
+                    : 'You do not have access to this application record, or the record id is invalid.';
+
+        } catch (error) {
+
+            this.adminApplicationIdIsAccessible = false;
+            this.adminApplicationAccessMessage =
+                this.getErrorMessage(
+                    error
+                ) ||
+                'Application record could not be verified.';
+
+        }
 
     }
 
@@ -2831,7 +2958,10 @@ export default class AcademicApplicationForm
                             this.formData
                         ),
 
-                    sessionId: null
+                    sessionId: null,
+
+                    targetApplicationId:
+                        this.activeAdminApplicationId
 
                 });
 

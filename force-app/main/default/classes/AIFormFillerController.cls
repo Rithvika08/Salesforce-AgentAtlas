@@ -42,7 +42,7 @@ public without sharing class AIFormFillerController {
 
             response.resultJson =
                 JSON.serialize(
-                    fillFormWithAI()
+                    fillFormWithAI(null)
                 );
 
             responses.add(
@@ -55,7 +55,7 @@ public without sharing class AIFormFillerController {
 
     @AuraEnabled
     public static Map<String, Object>
-    fillFormWithAI() {
+    fillFormWithAI(Id targetApplicationId) {
 
         try {
 
@@ -89,6 +89,9 @@ public without sharing class AIFormFillerController {
         List<UserDataDiscoveryService.FormQuestion>
             questions =
                 new List<UserDataDiscoveryService.FormQuestion>();
+
+        Boolean hasAdminReviewMetadata =
+            false;
 
         /*
          * LOAD QUESTIONS FROM METADATA
@@ -149,6 +152,31 @@ public without sharing class AIFormFillerController {
 
             questions.add(question);
 
+            if (
+                isAdminReviewQuestion(
+                    q.Question_Id__c
+                )
+            ) {
+
+                hasAdminReviewMetadata =
+                    true;
+
+            }
+
+        }
+
+        if (
+
+            targetApplicationId != null &&
+            canUseAdminApplicationContext() &&
+            !hasAdminReviewMetadata
+
+        ) {
+
+            questions.addAll(
+                buildAdminReviewQuestions()
+            );
+
         }
 
         /*
@@ -164,7 +192,8 @@ public without sharing class AIFormFillerController {
             einsteinPromptResults =
                 EinsteinPromptExtractionService.extractAnswers(
                     UserInfo.getUserId(),
-                    questions
+                    questions,
+                    targetApplicationId
                 );
 
         }
@@ -193,7 +222,8 @@ public without sharing class AIFormFillerController {
             userDiscoveryResults =
                 UserDataDiscoveryService.discoverDataForForm(
                     UserInfo.getUserId(),
-                    questions
+                    questions,
+                    targetApplicationId
                 );
 
         for (
@@ -546,7 +576,9 @@ public without sharing class AIFormFillerController {
 
         String questionType,
 
-        String picklistValues
+        String picklistValues,
+
+        Id targetApplicationId
 
     ) {
 
@@ -595,7 +627,8 @@ public without sharing class AIFormFillerController {
                 einsteinPromptResults =
                     EinsteinPromptExtractionService.extractAnswers(
                         UserInfo.getUserId(),
-                        questions
+                        questions,
+                        targetApplicationId
                     );
 
             }
@@ -614,7 +647,8 @@ public without sharing class AIFormFillerController {
                 userDiscoveryResults =
                     UserDataDiscoveryService.discoverDataForForm(
                         UserInfo.getUserId(),
-                        questions
+                        questions,
+                        targetApplicationId
                     );
 
             Map<String, UserDataDiscoveryService.DataDiscoveryResult>
@@ -1340,6 +1374,131 @@ public without sharing class AIFormFillerController {
 
     }
 
+    private static Boolean isAdminReviewQuestion(
+
+        String questionId
+
+    ) {
+
+        return !String.isBlank(
+            questionId
+        ) &&
+            questionId
+                .toLowerCase()
+                .startsWith(
+                    'admin_'
+                );
+
+    }
+
+    private static Boolean canUseAdminApplicationContext() {
+
+        return Schema.sObjectType.Academic_Application__c.isAccessible() &&
+            Schema.sObjectType.Academic_Application__c.fields.Applicant__c.isAccessible() &&
+            Schema.sObjectType.Academic_Application__c.fields.Decision_Status__c.isAccessible() &&
+            Schema.sObjectType.Academic_Application__c.fields.Admin_Review_Comments__c.isAccessible();
+
+    }
+
+    private static List<UserDataDiscoveryService.FormQuestion>
+        buildAdminReviewQuestions() {
+
+        List<UserDataDiscoveryService.FormQuestion> questions =
+            new List<UserDataDiscoveryService.FormQuestion>();
+
+        questions.add(
+            buildAdminReviewQuestion(
+                'admin_decision_status',
+                'Decision Status',
+                'picklist',
+                'Pending Review,Approved,Rejected,Waitlisted'
+            )
+        );
+
+        questions.add(
+            buildAdminReviewQuestion(
+                'admin_admission_granted',
+                'Admission Granted',
+                'checkbox',
+                null
+            )
+        );
+
+        questions.add(
+            buildAdminReviewQuestion(
+                'admin_review_comments',
+                'Admin Review Comments',
+                'textarea',
+                null
+            )
+        );
+
+        questions.add(
+            buildAdminReviewQuestion(
+                'admin_approval_comments',
+                'Approval Decision Comments',
+                'textarea',
+                null
+            )
+        );
+
+        questions.add(
+            buildAdminReviewQuestion(
+                'admin_rejection_comments',
+                'Rejection Comments',
+                'textarea',
+                null
+            )
+        );
+
+        questions.add(
+            buildAdminReviewQuestion(
+                'admin_reviewer_notes',
+                'Reviewer Notes',
+                'textarea',
+                null
+            )
+        );
+
+        questions.add(
+            buildAdminReviewQuestion(
+                'admin_decision_date',
+                'Decision Date',
+                'date',
+                null
+            )
+        );
+
+        return questions;
+
+    }
+
+    private static UserDataDiscoveryService.FormQuestion
+        buildAdminReviewQuestion(
+            String questionId,
+            String questionText,
+            String questionType,
+            String picklistValues
+        ) {
+
+        UserDataDiscoveryService.FormQuestion question =
+            new UserDataDiscoveryService.FormQuestion();
+
+        question.questionId =
+            questionId;
+        question.questionText =
+            questionText;
+        question.questionType =
+            questionType;
+        question.picklistValues =
+            picklistValues;
+        question.pageNumber =
+            6;
+
+        return question;
+
+    }
+
     private static Map<String, Object> summarizeProviderResult(
 
         UserDataDiscoveryService.DataDiscoveryResult result
@@ -1875,7 +2034,10 @@ public without sharing class AIFormFillerController {
             context.con == null ||
 
             String.isBlank(
-                context.con.Applicant_Knowledge__c
+                UserDataDiscoveryService.getContactText(
+                    context.con,
+                    'Applicant_Knowledge__c'
+                )
             )
 
         ) {
@@ -1885,7 +2047,10 @@ public without sharing class AIFormFillerController {
         }
 
         String knowledge =
-            context.con.Applicant_Knowledge__c;
+            UserDataDiscoveryService.getContactText(
+                context.con,
+                'Applicant_Knowledge__c'
+            );
 
         for (
 

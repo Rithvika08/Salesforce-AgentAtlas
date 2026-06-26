@@ -6,14 +6,15 @@
 
         <!-- MAIN LAYOUT -->
 
-        <div class="application-layout">
+        <div class={applicationLayoutClass}>
 
             <!-- SIDEBAR -->
 
             <div class="sidebar">
 
                 <c-application-progress-sidebar
-                    current-page={currentPage}>
+                    current-page={currentPage}
+                    total-pages={totalPages}>
                 </c-application-progress-sidebar>
 
             </div>
@@ -72,6 +73,7 @@
                         full-schema={schemaQuestions}
                         ai-field-messages={aiFieldMessages}
                         source-breakdown={sourceBreakdownByQuestion}
+                        compact-layout={isSubmissionRecordMode}
                         onfieldchange={handleFieldChange}
                         onfieldrevert={handleFieldRevert}
                         onfieldundo={handleFieldUndo}
@@ -177,6 +179,8 @@
 
                             submission-id={submissionId}
 
+                            target-application-id={activeAdminApplicationId}
+
                             onaifilled={handleAIFilled}>
 
                         </c-ai-form-filler-button>
@@ -186,10 +190,51 @@
                             current-page={currentPage}
                             form-config={schemaQuestions}
                             submission-id={submissionId}
+                            target-application-id={activeAdminApplicationId}
                             onfieldaimessage={handleFieldAIMessage}
                             onaifilled={handleAIFilled}>
 
                         </c-ai-form-filler-chat>
+
+                        <template if:true={showManualAdminApplicationInput}>
+
+                            <div class="admin-application-context">
+
+                                <label
+                                    class="admin-application-context__label"
+                                    for="adminApplicationId">
+
+                                    Academic Application Record Id
+
+                                </label>
+
+                                <input
+                                    id="adminApplicationId"
+                                    class="admin-application-context__input"
+                                    value={adminApplicationId}
+                                    onchange={handleAdminApplicationIdChange}
+                                    placeholder="Enter Academic_Application__c Id"
+                                    type="text" />
+
+                                <p class="admin-application-context__hint">
+
+                                    Admin-only. AI fill will use this selected application and its applicant Contact.
+
+                                </p>
+
+                                <template if:true={adminApplicationAccessMessage}>
+
+                                    <p class="admin-application-context__hint">
+
+                                        {adminApplicationAccessMessage}
+
+                                    </p>
+
+                                </template>
+
+                            </div>
+
+                        </template>
 
                         <template if:true={hasAutoFilledData}>
 

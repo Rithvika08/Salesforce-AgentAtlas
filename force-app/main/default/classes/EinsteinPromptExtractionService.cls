@@ -15,6 +15,25 @@ public without sharing class EinsteinPromptExtractionService {
 
     ) {
 
+        return extractAnswers(
+            userId,
+            questions,
+            null
+        );
+
+    }
+
+    public static Map<String, UserDataDiscoveryService.DataDiscoveryResult>
+    extractAnswers(
+
+        Id userId,
+
+        List<UserDataDiscoveryService.FormQuestion> questions,
+
+        Id targetApplicationId
+
+    ) {
+
         Map<String, UserDataDiscoveryService.DataDiscoveryResult> results =
             new Map<String, UserDataDiscoveryService.DataDiscoveryResult>();
 
@@ -32,7 +51,8 @@ public without sharing class EinsteinPromptExtractionService {
 
         UserDataDiscoveryService.DiscoveryContext context =
             UserDataDiscoveryService.loadDiscoveryContext(
-                userId
+                userId,
+                targetApplicationId
             );
 
         String sourceDataJson =
@@ -577,7 +597,10 @@ public without sharing class EinsteinPromptExtractionService {
             'applicantKnowledge' =>
                 context.con == null
                     ? null
-                    : context.con.Applicant_Knowledge__c,
+                    : UserDataDiscoveryService.getContactText(
+                        context.con,
+                        'Applicant_Knowledge__c'
+                    ),
             'user' =>
                 context.usr == null
                     ? null
@@ -599,16 +622,48 @@ public without sharing class EinsteinPromptExtractionService {
                         'birthdate' => context.con.Birthdate,
                         'phone' => context.con.Phone,
                         'mobilePhone' => context.con.MobilePhone,
-                        'gender' => context.con.Gender__c,
+                        'gender' =>
+                            UserDataDiscoveryService.getContactText(
+                                context.con,
+                                'Gender__c'
+                            ),
                         'citizenshipStatus' =>
-                            context.con.Citizenship_Status__c,
-                        'languages' => context.con.Languages__c,
+                            UserDataDiscoveryService.getContactText(
+                                context.con,
+                                'Citizenship_Status__c'
+                            ),
+                        'languages' =>
+                            UserDataDiscoveryService.getContactText(
+                                context.con,
+                                'Languages__c'
+                            ),
                         'mailingStreet' => context.con.MailingStreet,
                         'mailingCity' => context.con.MailingCity,
                         'mailingState' => context.con.MailingState,
                         'mailingPostalCode' =>
                             context.con.MailingPostalCode,
                         'mailingCountry' => context.con.MailingCountry
+                    },
+            'application' =>
+                context.application == null
+                    ? null
+                    : new Map<String, Object>{
+                        'id' => context.application.Id,
+                        'applicantId' => context.application.Applicant__c,
+                        'admissionGranted' =>
+                            context.application.Admission_Granted__c,
+                        'decisionStatus' =>
+                            context.application.Decision_Status__c,
+                        'adminReviewComments' =>
+                            context.application.Admin_Review_Comments__c,
+                        'approvalDecisionComments' =>
+                            context.application.Approval_Decision_Comments__c,
+                        'rejectionComments' =>
+                            context.application.Rejection_Comments__c,
+                        'reviewerNotes' =>
+                            context.application.Reviewer_Notes__c,
+                        'decisionDate' =>
+                            context.application.Decision_Date__c
                     }
         };
 

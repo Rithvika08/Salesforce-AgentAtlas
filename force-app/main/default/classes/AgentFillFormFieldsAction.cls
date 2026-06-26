@@ -30,7 +30,7 @@ public without sharing class AgentFillFormFieldsAction {
         for (Integer i = 0; i < requestCount; i++) {
             Response response = new Response();
             response.resultJson = JSON.serialize(
-                AIFormFillerController.fillFormWithAI()
+                AIFormFillerController.fillFormWithAI(null)
             );
             responses.add(response);
         }

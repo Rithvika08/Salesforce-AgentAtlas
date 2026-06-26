@@ -129,7 +129,10 @@ public without sharing class PromptBuilderCommandInterpreter {
                 'applicantKnowledge' =>
                     context.con == null
                         ? null
-                        : context.con.Applicant_Knowledge__c,
+                        : UserDataDiscoveryService.getContactText(
+                            context.con,
+                            'Applicant_Knowledge__c'
+                        ),
                 'user' =>
                     context.usr == null
                         ? null
@@ -151,10 +154,21 @@ public without sharing class PromptBuilderCommandInterpreter {
                             'birthdate' => context.con.Birthdate,
                             'phone' => context.con.Phone,
                             'mobilePhone' => context.con.MobilePhone,
-                            'gender' => context.con.Gender__c,
+                            'gender' =>
+                                UserDataDiscoveryService.getContactText(
+                                    context.con,
+                                    'Gender__c'
+                                ),
                             'citizenshipStatus' =>
-                                context.con.Citizenship_Status__c,
-                            'languages' => context.con.Languages__c,
+                                UserDataDiscoveryService.getContactText(
+                                    context.con,
+                                    'Citizenship_Status__c'
+                                ),
+                            'languages' =>
+                                UserDataDiscoveryService.getContactText(
+                                    context.con,
+                                    'Languages__c'
+                                ),
                             'mailingStreet' => context.con.MailingStreet,
                             'mailingCity' => context.con.MailingCity,
                             'mailingState' => context.con.MailingState,

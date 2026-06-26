@@ -10,6 +10,8 @@ export default class Dynamicformpage extends LightningElement {
 
     @api aiFieldMessages = {};
 
+    @api compactLayout = false;
+
     // FULL FORM SCHEMA
 
     @api fullSchema = [];
@@ -26,7 +28,9 @@ export default class Dynamicformpage extends LightningElement {
 
         4: 'Program Selection & Academic Interests',
 
-        5: 'Essays & Final Questions'
+        5: 'Essays & Final Questions',
+
+        6: 'Admin Review'
 
     };
 
@@ -263,6 +267,14 @@ export default class Dynamicformpage extends LightningElement {
             };
 
         });
+
+    }
+
+    get fieldColumnClass() {
+
+        return this.compactLayout
+            ? 'slds-size_1-of-1 slds-p-around_small'
+            : 'slds-size_1-of-1 slds-medium-size_1-of-2 slds-p-around_small';
 
     }
 

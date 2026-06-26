@@ -135,11 +135,28 @@ public with sharing class UserDataDiscoveryService {
 
         public Contact con;
 
+        public Academic_Application__c application;
+
     }
 
     public static DiscoveryContext loadDiscoveryContext(
 
         Id userId
+
+    ) {
+
+        return loadDiscoveryContext(
+            userId,
+            null
+        );
+
+    }
+
+    public static DiscoveryContext loadDiscoveryContext(
+
+        Id userId,
+
+        Id targetApplicationId
 
     ) {
 
@@ -173,37 +190,75 @@ public with sharing class UserDataDiscoveryService {
         context.con =
             null;
 
+        context.application =
+            null;
+
+        Id contactId =
+            context.usr.ContactId;
+
         if (
 
-            context.usr.ContactId != null
+            targetApplicationId != null &&
+            Schema.sObjectType.Academic_Application__c.isAccessible() &&
+            Schema.sObjectType.Academic_Application__c.fields.Applicant__c.isAccessible()
 
         ) {
 
-            List<Contact> contacts = [
-
+            List<Academic_Application__c> applications = [
                 SELECT
                     Id,
-                    Birthdate,
-                    Phone,
-                    MobilePhone,
-                    Gender__c,
-                    Citizenship_Status__c,
-                    Languages__c,
-                    MailingStreet,
-                    MailingCity,
-                    MailingState,
-                    MailingPostalCode,
-                    MailingCountry,
-                    Applicant_Knowledge__c,
+                    Applicant__c,
+                    Admission_Granted__c,
+                    Decision_Status__c,
+                    Admin_Review_Comments__c,
+                    Approval_Decision_Comments__c,
+                    Rejection_Comments__c,
+                    Reviewer_Notes__c,
+                    Decision_Date__c,
                     LastModifiedDate
-
-                FROM Contact
-
-                WHERE Id = :context.usr.ContactId
-
+                FROM Academic_Application__c
+                WHERE Id = :targetApplicationId
+                WITH USER_MODE
                 LIMIT 1
-
             ];
+
+            if (
+
+                !applications.isEmpty()
+
+            ) {
+
+                context.application =
+                    applications[0];
+
+                contactId =
+                    context.application.Applicant__c;
+
+            }
+
+        }
+
+        if (
+
+            contactId != null
+
+        ) {
+
+            List<String> contactFields =
+                getContactDiscoveryFields();
+
+            String contactQuery =
+                'SELECT ' +
+                String.join(
+                    contactFields,
+                    ','
+                ) +
+                ' FROM Contact WHERE Id = :contactId WITH USER_MODE LIMIT 1';
+
+            List<Contact> contacts =
+                Database.query(
+                    contactQuery
+                );
 
             if (
 
@@ -222,6 +277,113 @@ public with sharing class UserDataDiscoveryService {
 
     }
 
+    private static List<String> getContactDiscoveryFields() {
+
+        List<String> fields =
+            new List<String>{
+                'Id',
+                'Birthdate',
+                'Phone',
+                'MobilePhone',
+                'MailingStreet',
+                'MailingCity',
+                'MailingState',
+                'MailingPostalCode',
+                'MailingCountry',
+                'LastModifiedDate'
+            };
+
+        for (
+            String optionalField :
+            new List<String>{
+                'Gender__c',
+                'Citizenship_Status__c',
+                'Languages__c',
+                'Applicant_Knowledge__c'
+            }
+        ) {
+
+            if (
+                isContactFieldReadable(
+                    optionalField
+                )
+            ) {
+
+                fields.add(
+                    optionalField
+                );
+
+            }
+
+        }
+
+        return fields;
+
+    }
+
+    private static Boolean isContactFieldReadable(
+
+        String fieldApiName
+
+    ) {
+
+        Map<String, Schema.SObjectField> fieldMap =
+            Contact.SObjectType.getDescribe().fields.getMap();
+
+        return fieldMap.containsKey(
+            fieldApiName
+        ) &&
+            fieldMap.get(
+                fieldApiName
+            )
+                .getDescribe()
+                .isAccessible();
+
+    }
+
+    public static String getContactText(
+
+        Contact contactRecord,
+
+        String fieldApiName
+
+    ) {
+
+        if (
+            contactRecord == null ||
+            String.isBlank(
+                fieldApiName
+            ) ||
+            !isContactFieldReadable(
+                fieldApiName
+            )
+        ) {
+
+            return null;
+
+        }
+
+        try {
+
+            Object value =
+                contactRecord.get(
+                    fieldApiName
+                );
+
+            return value == null
+                ? null
+                : String.valueOf(
+                    value
+                );
+
+        } catch (Exception e) {
+
+            return null;
+
+        }
+
+    }
+
     @AuraEnabled
     public static Map<String, DataDiscoveryResult>
     discoverDataForForm(
@@ -232,13 +394,33 @@ public with sharing class UserDataDiscoveryService {
 
     ) {
 
+        return discoverDataForForm(
+            userId,
+            questions,
+            null
+        );
+
+    }
+
+    public static Map<String, DataDiscoveryResult>
+    discoverDataForForm(
+
+        Id userId,
+
+        List<FormQuestion> questions,
+
+        Id targetApplicationId
+
+    ) {
+
         Map<String, DataDiscoveryResult>
             results =
                 new Map<String, DataDiscoveryResult>();
 
         DiscoveryContext context =
             loadDiscoveryContext(
-                userId
+                userId,
+                targetApplicationId
             );
 
         User usr =
@@ -246,6 +428,9 @@ public with sharing class UserDataDiscoveryService {
 
         Contact con =
             context.con;
+
+        Academic_Application__c application =
+            context.application;
 
         for (
 
@@ -293,12 +478,29 @@ public with sharing class UserDataDiscoveryService {
 
             Boolean matched = false;
 
+            if (
+
+                application != null
+
+            ) {
+
+                matched =
+                    applyApplicationAnswer(
+                        q,
+                        res,
+                        application
+                    );
+
+            }
+
             SemanticAnswer semanticAnswer =
-                inferSemanticAnswer(
-                    q,
-                    usr,
-                    con
-                );
+                matched
+                    ? null
+                    : inferSemanticAnswer(
+                        q,
+                        usr,
+                        con
+                    );
 
             if (
 
@@ -581,7 +783,10 @@ public with sharing class UserDataDiscoveryService {
                 res.recommendedValue =
                     con != null
                         ? extractCountryOfBirth(
-                            con.Applicant_Knowledge__c
+                            getContactText(
+                                con,
+                                'Applicant_Knowledge__c'
+                            )
                         )
                         : null;
 
@@ -672,7 +877,10 @@ public with sharing class UserDataDiscoveryService {
                 ) {
 
                     res.recommendedValue =
-                        con.Gender__c;
+                        getContactText(
+                            con,
+                            'Gender__c'
+                        );
 
                     matched = true;
 
@@ -685,7 +893,10 @@ public with sharing class UserDataDiscoveryService {
                 ) {
 
                     res.recommendedValue =
-                        con.Citizenship_Status__c;
+                        getContactText(
+                            con,
+                            'Citizenship_Status__c'
+                        );
 
                     matched = true;
 
@@ -698,7 +909,10 @@ public with sharing class UserDataDiscoveryService {
                 ) {
 
                     res.recommendedValue =
-                        con.Languages__c;
+                        getContactText(
+                            con,
+                            'Languages__c'
+                        );
 
                     matched = true;
 
@@ -717,13 +931,19 @@ public with sharing class UserDataDiscoveryService {
                 con != null &&
 
                 !String.isBlank(
-                    con.Applicant_Knowledge__c
+                    getContactText(
+                        con,
+                        'Applicant_Knowledge__c'
+                    )
                 )
 
             ) {
 
                 String knowledge =
-                    con.Applicant_Knowledge__c;
+                    getContactText(
+                        con,
+                        'Applicant_Knowledge__c'
+                    );
 
                 String lower =
                     knowledge.toLowerCase();
@@ -3104,7 +3324,9 @@ public with sharing class UserDataDiscoveryService {
 
         ) {
 
-            return false;
+            // Admin-only questions must come from the selected application,
+            // not from a synthesized Contact/User fallback.
+            return true;
 
         }
 
@@ -5182,7 +5404,10 @@ public with sharing class UserDataDiscoveryService {
 
         String knowledge =
             con != null
-                ? con.Applicant_Knowledge__c
+                ? getContactText(
+                    con,
+                    'Applicant_Knowledge__c'
+                )
                 : null;
 
         if (
@@ -5400,7 +5625,10 @@ public with sharing class UserDataDiscoveryService {
 
             return answerFromValue(
                 con != null
-                    ? con.Gender__c
+                    ? getContactText(
+                        con,
+                        'Gender__c'
+                    )
                     : null,
                 'Semantic match to gender'
             );
@@ -5417,7 +5645,10 @@ public with sharing class UserDataDiscoveryService {
 
             return answerFromValue(
                 con != null
-                    ? con.Citizenship_Status__c
+                    ? getContactText(
+                        con,
+                        'Citizenship_Status__c'
+                    )
                     : null,
                 'Semantic match to citizenship status'
             );
@@ -5440,7 +5671,10 @@ public with sharing class UserDataDiscoveryService {
 
             return answerFromValue(
                 con != null
-                    ? con.Languages__c
+                    ? getContactText(
+                        con,
+                        'Languages__c'
+                    )
                     : null,
                 'Semantic match to primary language'
             );
@@ -9729,6 +9963,182 @@ public with sharing class UserDataDiscoveryService {
             );
 
         }
+
+    }
+
+    private static Boolean applyApplicationAnswer(
+
+        FormQuestion question,
+
+        DataDiscoveryResult result,
+
+        Academic_Application__c application
+
+    ) {
+
+        if (
+
+            question == null ||
+            result == null ||
+            application == null
+
+        ) {
+
+            return false;
+
+        }
+
+        String questionId =
+            String.valueOf(
+                question.questionId
+            )
+                .toLowerCase()
+                .trim();
+
+        Object value;
+        String sourceField;
+
+        if (
+
+            questionId == 'admin_decision_status'
+
+        ) {
+
+            value =
+                application.Decision_Status__c;
+            sourceField =
+                'Academic_Application__c.Decision_Status__c';
+
+        }
+
+        else if (
+
+            questionId == 'admin_admission_granted'
+
+        ) {
+
+            value =
+                application.Admission_Granted__c;
+            sourceField =
+                'Academic_Application__c.Admission_Granted__c';
+
+        }
+
+        else if (
+
+            questionId == 'admin_review_comments'
+
+        ) {
+
+            value =
+                application.Admin_Review_Comments__c;
+            sourceField =
+                'Academic_Application__c.Admin_Review_Comments__c';
+
+        }
+
+        else if (
+
+            questionId == 'admin_approval_comments'
+
+        ) {
+
+            value =
+                application.Approval_Decision_Comments__c;
+            sourceField =
+                'Academic_Application__c.Approval_Decision_Comments__c';
+
+        }
+
+        else if (
+
+            questionId == 'admin_rejection_comments'
+
+        ) {
+
+            value =
+                application.Rejection_Comments__c;
+            sourceField =
+                'Academic_Application__c.Rejection_Comments__c';
+
+        }
+
+        else if (
+
+            questionId == 'admin_reviewer_notes'
+
+        ) {
+
+            value =
+                application.Reviewer_Notes__c;
+            sourceField =
+                'Academic_Application__c.Reviewer_Notes__c';
+
+        }
+
+        else if (
+
+            questionId == 'admin_decision_date'
+
+        ) {
+
+            value =
+                application.Decision_Date__c;
+            sourceField =
+                'Academic_Application__c.Decision_Date__c';
+
+        }
+
+        else {
+
+            return false;
+
+        }
+
+        if (
+
+            value == null ||
+            String.isBlank(
+                String.valueOf(
+                    value
+                )
+            )
+
+        ) {
+
+            return false;
+
+        }
+
+        result.recommendedValue =
+            String.valueOf(
+                value
+            );
+
+        result.bestMatchConfidence =
+            1;
+
+        result.reasoning =
+            'Used the selected academic application record for this admin review field.';
+
+        addResultSource(
+            result,
+            sourceField
+        );
+
+        result.sourceUpdatedAt =
+            application.LastModifiedDate == null
+                ? null
+                : application.LastModifiedDate.format();
+
+        result.selectionType =
+            'Direct mapping from selected application record';
+
+        result.alternativeOptions.add(
+            'No stronger selected-application alternative was found.'
+        );
+
+        return true;
 
     }
 
