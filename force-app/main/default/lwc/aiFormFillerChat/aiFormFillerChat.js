@@ -33,6 +33,8 @@ export default class AiFormFillerChat
 
     @api targetApplicationId;
 
+    @api canUpdateAdminFields = false;
+
     @track messages = [
         {
             id: 1,
@@ -67,6 +69,77 @@ export default class AiFormFillerChat
         return this.isProcessing ||
             !this.draftPrompt ||
             !this.draftPrompt.trim();
+
+    }
+
+    isAdminOnlyField(field) {
+
+        if (
+            !field
+        ) {
+
+            return false;
+
+        }
+
+        const fieldId =
+            String(
+                field.id || field.Question_Id__c || ''
+            )
+                .toLowerCase();
+
+        return fieldId.startsWith(
+            'admin_'
+        ) ||
+            Number(
+                field.page || field.Page_Number__c || 0
+            ) === 6;
+
+    }
+
+    canModifyFieldFromChat(field) {
+
+        return !this.isAdminOnlyField(
+            field
+        ) ||
+            this.canUpdateAdminFields === true;
+
+    }
+
+    blockUnauthorizedAdminField(field) {
+
+        const message =
+            `Only an authorized admin can update ${field?.label || 'this admin field'}.`;
+
+        this.addMessage(
+            message,
+            'assistant'
+        );
+
+        if (
+            field?.id
+        ) {
+
+            this.logChatDecisionSafely({
+                action:
+                    'admin_field_update',
+                status:
+                    'Denied',
+                questionId:
+                    field.id,
+                questionLabel:
+                    field.label,
+                source:
+                    'AI Form Chat',
+                confidence:
+                    0,
+                reason:
+                    message,
+                value:
+                    null
+            });
+
+        }
 
     }
 
@@ -2942,6 +3015,20 @@ export default class AiFormFillerChat
 
         }
 
+        if (
+            !this.canModifyFieldFromChat(
+                field
+            )
+        ) {
+
+            this.blockUnauthorizedAdminField(
+                field
+            );
+
+            return;
+
+        }
+
         const value =
             command.type === 'clear'
                 ? ''
@@ -3146,6 +3233,20 @@ export default class AiFormFillerChat
 
         }
 
+        if (
+            !this.canModifyFieldFromChat(
+                field
+            )
+        ) {
+
+            this.blockUnauthorizedAdminField(
+                field
+            );
+
+            return;
+
+        }
+
         const value =
             this.normalizeValueForField(
                 command.value,
@@ -3310,7 +3411,12 @@ export default class AiFormFillerChat
         }
 
         const field =
-            this.questions.find(question => {
+            (this.questions || []).find(question => {
+
+                return question.id === questionId;
+
+            }) ||
+            (this.normalizedConfig || []).find(question => {
 
                 return question.id === questionId;
 
@@ -4183,6 +4289,20 @@ export default class AiFormFillerChat
             this.addMessage(
                 'I could not identify which field you want me to fill.',
                 'assistant'
+            );
+
+            return;
+
+        }
+
+        if (
+            !this.canModifyFieldFromChat(
+                field
+            )
+        ) {
+
+            this.blockUnauthorizedAdminField(
+                field
             );
 
             return;

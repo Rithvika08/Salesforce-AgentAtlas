@@ -51,7 +51,7 @@ export default class ApplicationProgressSidebar extends LightningElement {
 
             steps.push({
                 id: 6,
-                label: 'Admin Review',
+                label: 'Admin View',
                 completed: false,
                 circleClass: this.getClass(6)
             });

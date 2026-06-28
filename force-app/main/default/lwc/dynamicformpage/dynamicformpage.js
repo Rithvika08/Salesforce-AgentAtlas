@@ -30,7 +30,7 @@ export default class Dynamicformpage extends LightningElement {
 
         5: 'Essays & Final Questions',
 
-        6: 'Admin Review'
+        6: 'Admin View'
 
     };
 

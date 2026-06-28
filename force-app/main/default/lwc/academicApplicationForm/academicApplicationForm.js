@@ -41,6 +41,25 @@ export default class AcademicApplicationForm
 
     @api recordId;
 
+    @api cardTitle =
+        'Academic Application Intake Portal';
+
+    @api iconName =
+        'standard:education';
+
+    @api submittedHeading =
+        'Application Submitted Successfully';
+
+    @api submitButtonLabel =
+        'Submit Application';
+
+    @api pageTitlesString = '';
+
+    @api excludedQuestionLabelsString = '';
+
+    @api formConfigObjectApiName =
+        'Form_Configuration_c__mdt';
+
     // FORM CONFIG
 
     @track schemaQuestions = [];
@@ -723,6 +742,21 @@ export default class AcademicApplicationForm
             filledData || {}
         ).forEach(questionId => {
 
+            if (
+                this.isAdminOnlyQuestion(
+                    questionId
+                ) &&
+                this.canUseAdminApplicationContext !== true
+            ) {
+
+                skippedEditedFieldIds.push(
+                    questionId
+                );
+
+                return;
+
+            }
+
             const existingFieldData =
                 this.formData[questionId] || {};
 
@@ -803,6 +837,45 @@ export default class AcademicApplicationForm
             skippedEditedFieldIds:
                 skippedEditedFieldIds
         };
+
+    }
+
+    isAdminOnlyQuestion(questionId) {
+
+        if (
+            !questionId
+        ) {
+
+            return false;
+
+        }
+
+        const normalizedQuestionId =
+            String(
+                questionId
+            )
+                .toLowerCase();
+
+        if (
+            normalizedQuestionId.startsWith(
+                'admin_'
+            )
+        ) {
+
+            return true;
+
+        }
+
+        const fieldConfig =
+            this.schemaQuestions.find(field => {
+
+                return field.id === questionId;
+
+            });
+
+        return Number(
+            fieldConfig?.page || 0
+        ) === 6;
 
     }
 
