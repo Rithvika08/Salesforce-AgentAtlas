@@ -60,6 +60,9 @@ export default class AcademicApplicationForm
     @api formConfigObjectApiName =
         'Form_Configuration_c__mdt';
 
+    @api formKey =
+        'academicApplication';
+
     // FORM CONFIG
 
     @track schemaQuestions = [];
@@ -425,6 +428,36 @@ export default class AcademicApplicationForm
                     wasAutoFilled
                         ? FIELD_STATUS.EDITED
                         : existingFieldData.fieldStatus,
+
+                confidence:
+                    wasAutoFilled
+                        ? existingFieldData.confidence
+                        : undefined,
+
+                reasoning:
+                    wasAutoFilled
+                        ? existingFieldData.reasoning
+                        : undefined,
+
+                selectionType:
+                    wasAutoFilled
+                        ? existingFieldData.selectionType
+                        : undefined,
+
+                sourceUpdatedAt:
+                    wasAutoFilled
+                        ? existingFieldData.sourceUpdatedAt
+                        : undefined,
+
+                alternativeOptions:
+                    wasAutoFilled
+                        ? existingFieldData.alternativeOptions
+                        : undefined,
+
+                sourceFields:
+                    wasAutoFilled
+                        ? existingFieldData.sourceFields
+                        : undefined,
 
                 userEditedAt:
                     new Date().toISOString(),

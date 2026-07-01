@@ -106,6 +106,26 @@ export default class Dynamicformpage extends LightningElement {
 
         return this.activePageData.fields.map(field => {
 
+            const fieldId =
+                field.id ||
+                field.Question_Id__c;
+
+            const fieldData =
+                this.formData[fieldId] || {};
+
+            const sourceBreakdown =
+                this.sourceBreakdown[fieldId] || {};
+
+            const hasFieldData =
+                Object.prototype.hasOwnProperty.call(
+                    this.formData || {},
+                    fieldId
+                );
+
+            const canShowFieldInsight =
+                fieldData.isAutoFilled === true &&
+                fieldData.isUserEdited !== true;
+
             return {
 
                 ...field,
@@ -113,8 +133,7 @@ export default class Dynamicformpage extends LightningElement {
                 // SUPPORT BOTH OLD + NEW STRUCTURE
 
                 id:
-                    field.id ||
-                    field.Question_Id__c,
+                    fieldId,
 
                 label:
                     field.label ||
@@ -142,126 +161,96 @@ export default class Dynamicformpage extends LightningElement {
 
                 currentValue:
 
-                    this.formData[
-                        field.id ||
-                        field.Question_Id__c
-                    ] !== undefined
+                    hasFieldData
 
-                        ? this.formData[
-                            field.id ||
-                            field.Question_Id__c
-                        ].value
+                        ? fieldData.value
 
                         : ''
                 ,
 
                 aiConfidence:
 
-                    this.formData[
-                        field.id ||
-                        field.Question_Id__c
-                    ]?.confidence,
+                    canShowFieldInsight
+                        ? fieldData.confidence
+                        : undefined,
 
                 aiReasoning:
 
-                    this.formData[
-                        field.id ||
-                        field.Question_Id__c
-                    ]?.reasoning,
+                    canShowFieldInsight
+                        ? fieldData.reasoning
+                        : undefined,
 
                 aiSelectionType:
 
-                    this.formData[
-                        field.id ||
-                        field.Question_Id__c
-                    ]?.selectionType,
+                    canShowFieldInsight
+                        ? fieldData.selectionType
+                        : undefined,
 
                 aiSourceUpdatedAt:
 
-                    this.formData[
-                        field.id ||
-                        field.Question_Id__c
-                    ]?.sourceUpdatedAt,
+                    canShowFieldInsight
+                        ? fieldData.sourceUpdatedAt
+                        : undefined,
 
                 aiAlternativeOptions:
 
-                    this.formData[
-                        field.id ||
-                        field.Question_Id__c
-                    ]?.alternativeOptions,
+                    canShowFieldInsight
+                        ? fieldData.alternativeOptions
+                        : undefined,
 
                 aiRawSourceFields:
 
-                    this.formData[
-                        field.id ||
-                        field.Question_Id__c
-                    ]?.sourceFields,
+                    canShowFieldInsight
+                        ? fieldData.sourceFields
+                        : undefined,
 
                 originalAIValue:
 
-                    this.formData[
-                        field.id ||
-                        field.Question_Id__c
-                    ]?.originalAIValue,
+                    fieldData.originalAIValue,
 
                 isAutoFilled:
 
-                    this.formData[
-                        field.id ||
-                        field.Question_Id__c
-                    ]?.isAutoFilled === true,
+                    fieldData.isAutoFilled === true,
 
                 isUserEdited:
 
-                    this.formData[
-                        field.id ||
-                        field.Question_Id__c
-                    ]?.isUserEdited === true,
+                    fieldData.isUserEdited === true,
 
                 fieldStatus:
 
-                    this.formData[
-                        field.id ||
-                        field.Question_Id__c
-                    ]?.fieldStatus,
+                    fieldData.fieldStatus,
 
                 canUndo:
 
                     this.canMoveFieldHistory(
-                        field.id ||
-                        field.Question_Id__c,
+                        fieldId,
                         -1
                     ),
 
                 canRedo:
 
                     this.canMoveFieldHistory(
-                        field.id ||
-                        field.Question_Id__c,
+                        fieldId,
                         1
                     ),
 
                 sourceFieldsText:
 
                     this.sanitizeSourceFieldsText(
-                        this.sourceBreakdown[
-                            field.id ||
-                            field.Question_Id__c
-                        ]?.sourcesText || ''
+                        canShowFieldInsight
+                            ? sourceBreakdown.sourcesText || ''
+                            : ''
                     ),
 
                 isMergedAnswer:
 
-                    this.sourceBreakdown[
-                        field.id ||
-                        field.Question_Id__c
-                    ]?.isMergedAnswer === true,
+                    canShowFieldInsight &&
+                    sourceBreakdown.isMergedAnswer === true,
 
                 aiMessage:
 
                     this.aiFieldMessages[
-                        field.id ||
-                        field.Question_Id__c
+                        fieldId
                     ] || ''
 
             };
@@ -270,11 +259,56 @@ export default class Dynamicformpage extends LightningElement {
 
     }
 
-    get fieldColumnClass() {
+    get fieldGridClass() {
 
         return this.compactLayout
-            ? 'slds-size_1-of-1 slds-p-around_small'
-            : 'slds-size_1-of-1 slds-medium-size_1-of-2 slds-p-around_small';
+            ? 'form-fields-grid compact'
+            : 'form-fields-grid';
+
+    }
+
+    get activeFieldColumns() {
+
+        const fields =
+            this.activeFields;
+
+        if (
+            this.compactLayout
+        ) {
+
+            return [
+                {
+                    id:
+                        'single',
+                    fields:
+                        fields
+                }
+            ];
+
+        }
+
+        return [
+            {
+                id:
+                    'left',
+                fields:
+                    fields.filter((field, index) => {
+
+                        return index % 2 === 0;
+
+                    })
+            },
+            {
+                id:
+                    'right',
+                fields:
+                    fields.filter((field, index) => {
+
+                        return index % 2 === 1;
+
+                    })
+            }
+        ];
 
     }
 

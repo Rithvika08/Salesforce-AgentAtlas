@@ -57,3 +57,49 @@
     padding-bottom: 1rem;
 
 }
+
+.form-fields-grid {
+
+    align-items: start;
+
+    display: grid;
+
+    gap: 1.15rem 2rem;
+
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+
+}
+
+.form-fields-grid.compact {
+
+    grid-template-columns: minmax(0, 1fr);
+
+}
+
+.form-field-column {
+
+    display: flex;
+
+    flex-direction: column;
+
+    gap: 1.15rem;
+
+    min-width: 0;
+
+}
+
+.form-field-item {
+
+    min-width: 0;
+
+}
+
+@media (max-width: 768px) {
+
+    .form-fields-grid {
+
+        grid-template-columns: minmax(0, 1fr);
+
+    }
+
+}

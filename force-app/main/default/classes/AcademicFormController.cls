@@ -500,6 +500,47 @@ public without sharing class AcademicFormController {
     
     }
 
+    private static Form_Submission__c buildDraftSubmission(
+
+        Integer currentPage,
+
+        String sessionId
+
+    ) {
+
+        return new Form_Submission__c(
+
+            Status__c =
+                'In Progress',
+
+            Current_Page__c =
+                currentPage,
+
+            User__c =
+                UserInfo.getUserId(),
+
+            Application_Type__c =
+                'Graduate Admission',
+
+            Total_Pages__c =
+                STUDENT_TOTAL_PAGES,
+
+            Percent_Complete__c =
+                (currentPage * 100) / STUDENT_TOTAL_PAGES,
+
+            Started_Date__c =
+                System.now(),
+
+            Last_Saved__c =
+                System.now(),
+
+            Session_ID__c =
+                sessionId
+
+        );
+
+    }
+
     @AuraEnabled
     public static Map<String, Object>
     loadFormSubmission(Id submissionId) {
@@ -837,44 +878,15 @@ public without sharing class AcademicFormController {
          */
     
         if (submissionId == null) {
-    
+
             submission =
-                new Form_Submission__c(
-    
-                    Status__c = 'In Progress',
-    
-                    Current_Page__c =
-                        currentPage,
-    
-                    User__c =
-                        UserInfo.getUserId(),
-    
-                    /*
-                     * NEW FIELDS
-                     */
-    
-                    Application_Type__c =
-                        'Graduate Admission',
-    
-                    Total_Pages__c =
-                        STUDENT_TOTAL_PAGES,
-    
-                    Percent_Complete__c =
-                        (currentPage * 100) / STUDENT_TOTAL_PAGES,
-    
-                    Started_Date__c =
-                        System.now(),
-    
-                    Last_Saved__c =
-                        System.now(),
-    
-                    Session_ID__c =
-                        sessionId
-    
+                buildDraftSubmission(
+                    currentPage,
+                    sessionId
                 );
-    
+
             insert submission;
-    
+
         }
     
         /*
@@ -883,37 +895,63 @@ public without sharing class AcademicFormController {
     
         else {
     
-            submission = [
-    
+            List<Form_Submission__c> submissions = [
+
                 SELECT
                     Id,
                     Current_Page__c,
                     User__c
-    
+
                 FROM Form_Submission__c
-    
+
                 WHERE Id = :submissionId
-    
+
                 LIMIT 1
-    
+
             ];
-    
-            submission.Current_Page__c =
-                currentPage;
-    
-            submission.Total_Pages__c =
-                STUDENT_TOTAL_PAGES;
-    
-            submission.Percent_Complete__c =
-                (currentPage * 100) / STUDENT_TOTAL_PAGES;
-    
-            submission.Last_Saved__c =
-                System.now();
-    
-            submission.Session_ID__c =
-                sessionId;
-    
-            update submission;
+
+            if (
+                submissions.isEmpty()
+            ) {
+
+                submission =
+                    buildDraftSubmission(
+                        currentPage,
+                        sessionId
+                    );
+
+                insert submission;
+
+                result.put(
+                    'recreatedSubmission',
+                    true
+                );
+
+            }
+
+            else {
+
+                submission =
+                    submissions[0];
+
+                submission.Current_Page__c =
+                    currentPage;
+
+                submission.Total_Pages__c =
+                    STUDENT_TOTAL_PAGES;
+
+                submission.Percent_Complete__c =
+                    (currentPage * 100) / STUDENT_TOTAL_PAGES;
+
+                submission.Last_Saved__c =
+                    System.now();
+
+                submission.Session_ID__c =
+                    sessionId;
+
+                update submission;
+
+            }
     
         }
     

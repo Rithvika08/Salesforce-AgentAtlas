@@ -53,6 +53,11 @@
                 type="String"
                 label="Form Configuration Object API Name"
                 default="Form_Configuration_c__mdt" />
+            <property
+                name="formKey"
+                type="String"
+                label="Form Key"
+                default="academicApplication" />
             <objects>
                 <object>Form_Submission__c</object>
             </objects>
@@ -93,6 +98,11 @@
                 type="String"
                 label="Form Configuration Object API Name"
                 default="Form_Configuration_c__mdt" />
+            <property
+                name="formKey"
+                type="String"
+                label="Form Key"
+                default="academicApplication" />
         </targetConfig>
         <targetConfig targets="lightning__HomePage">
             <property
@@ -130,6 +140,53 @@
                 type="String"
                 label="Form Configuration Object API Name"
                 default="Form_Configuration_c__mdt" />
+            <property
+                name="formKey"
+                type="String"
+                label="Form Key"
+                default="academicApplication" />
+        </targetConfig>
+        <targetConfig targets="lightningCommunity__Default">
+            <property
+                name="cardTitle"
+                type="String"
+                label="Card Title"
+                default="Academic Application Intake Portal" />
+            <property
+                name="iconName"
+                type="String"
+                label="Icon Name"
+                default="standard:education" />
+            <property
+                name="submittedHeading"
+                type="String"
+                label="Submitted Heading"
+                default="Application Submitted Successfully" />
+            <property
+                name="submitButtonLabel"
+                type="String"
+                label="Submit Button Label"
+                default="Submit Application" />
+            <property
+                name="pageTitlesString"
+                type="String"
+                label="Page Titles JSON"
+                default="" />
+            <property
+                name="excludedQuestionLabelsString"
+                type="String"
+                label="Excluded Question Labels"
+                default="" />
+            <property
+                name="formConfigObjectApiName"
+                type="String"
+                label="Form Configuration Object API Name"
+                default="Form_Configuration_c__mdt" />
+            <property
+                name="formKey"
+                type="String"
+                label="Form Key"
+                default="academicApplication" />
         </targetConfig>
     </targetConfigs>
 </LightningComponentBundle>

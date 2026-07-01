@@ -410,6 +410,26 @@ export default class FormField
 
     }
 
+    get aiInsightSummary() {
+
+        return `${this.confidencePercent} confidence • ${this.aiInsightSourcePreview}`;
+
+    }
+
+    get aiInsightSourcePreview() {
+
+        const sourceText =
+            this.explanationSourceText;
+
+        return sourceText.length > 44
+            ? `${sourceText.slice(
+                0,
+                41
+            )}...`
+            : sourceText;
+
+    }
+
     get hasAIExplanation() {
 
         return !this.isCheckbox &&
@@ -564,8 +584,8 @@ export default class FormField
     get explanationPanelClass() {
 
         return this.isExplanationOpen
-            ? 'ai-explanation-panel is-open'
-            : 'ai-explanation-panel';
+            ? 'ai-explanation-panel ai-insight-panel is-open'
+            : 'ai-explanation-panel ai-insight-panel';
 
     }
 

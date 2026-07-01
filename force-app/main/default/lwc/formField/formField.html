@@ -148,14 +148,44 @@
 
         <template if:true={hasAIExplanation}>
 
-            <div class="ai-confidence-row">
+            <div class="ai-insight-row">
 
                 <button
                     type="button"
-                    class="ai-confidence-indicator"
+                    class="ai-insight-trigger"
                     title={confidenceTooltip}
                     aria-label={confidenceTooltip}
-                    onclick={toggleExplanation}>i</button>
+                    onclick={toggleExplanation}>
+
+                    <span class="ai-insight-icon">
+
+                        ?
+
+                    </span>
+
+                    <span class="ai-insight-copy">
+
+                        <span class="ai-insight-title">
+
+                            Field insight
+
+                        </span>
+
+                        <span class="ai-insight-summary">
+
+                            {aiInsightSummary}
+
+                        </span>
+
+                    </span>
+
+                    <span class="ai-insight-chevron">
+
+                        Details
+
+                    </span>
+
+                </button>
 
                 <section
                     class={explanationPanelClass}>

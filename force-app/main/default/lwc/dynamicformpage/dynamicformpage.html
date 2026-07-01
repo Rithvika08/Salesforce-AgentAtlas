@@ -8,24 +8,36 @@
 
         </h2>
 
-        <div class="slds-grid slds-wrap">
+        <div class={fieldGridClass}>
 
             <template
-                for:each={activeFields}
-                for:item="field">
+                for:each={activeFieldColumns}
+                for:item="column">
 
                 <div
-                    key={field.id}
-                    class={fieldColumnClass}>
+                    key={column.id}
+                    class="form-field-column">
 
-                    <c-form-field
-                        field-config={field}
-                        current-value={field.currentValue}
-                        onvaluechange={handleFieldChange}
-                        onrevertaivalue={handleFieldRevert}
-                        onundofieldvalue={handleFieldUndo}
-                        onredofieldvalue={handleFieldRedo}>
-                    </c-form-field>
+                    <template
+                        for:each={column.fields}
+                        for:item="field">
+
+                        <div
+                            key={field.id}
+                            class="form-field-item">
+
+                            <c-form-field
+                                field-config={field}
+                                current-value={field.currentValue}
+                                onvaluechange={handleFieldChange}
+                                onrevertaivalue={handleFieldRevert}
+                                onundofieldvalue={handleFieldUndo}
+                                onredofieldvalue={handleFieldRedo}>
+                            </c-form-field>
+
+                        </div>
+
+                    </template>
 
                 </div>
 

@@ -158,43 +158,136 @@ lightning-helptext {
 
 }
 
-.ai-confidence-row {
+.ai-insight-row {
 
-    line-height: 1;
+    line-height: 1.15;
 
-    margin-top: 0.2rem;
+    margin-top: 0.3rem;
 
     position: relative;
 
 }
 
-.ai-confidence-indicator {
+.ai-insight-trigger {
 
     align-items: center;
 
-    border: 0;
+    background: linear-gradient(135deg, #eef6ff 0%, #f8fbff 100%);
 
-    background: #706e6b;
+    border: 1px solid #b8d9ff;
 
-    border-radius: 50%;
+    border-radius: 0.35rem;
 
-    color: #fff;
+    box-shadow: 0 1px 3px rgba(1, 118, 211, 0.12);
 
     cursor: pointer;
 
+    color: #12345a;
+
+    display: flex;
+
+    gap: 0.35rem;
+
+    max-width: 100%;
+
+    min-height: 1.55rem;
+
+    padding: 0.2rem 0.35rem;
+
+    text-align: left;
+
+    width: 100%;
+
+}
+
+.ai-insight-trigger:hover,
+.ai-insight-trigger:focus {
+
+    border-color: #0176d3;
+
+    box-shadow: 0 2px 8px rgba(1, 118, 211, 0.2);
+
+    outline: none;
+
+}
+
+.ai-insight-icon {
+
+    align-items: center;
+
+    background: #0176d3;
+
+    border-radius: 999px;
+
+    color: #fff;
+
     display: inline-flex;
 
-    font-size: 0.55rem;
+    flex: 0 0 auto;
 
-    font-weight: 700;
+    font-size: 0.5rem;
 
-    height: 0.85rem;
+    font-weight: 800;
+
+    height: 1.05rem;
 
     justify-content: center;
 
-    line-height: 1;
+    letter-spacing: 0.03em;
 
-    width: 0.85rem;
+    margin-top: 0.02rem;
+
+    width: 1.05rem;
+
+}
+
+.ai-insight-copy {
+
+    display: flex;
+
+    flex: 1 1 auto;
+
+    flex-direction: column;
+
+    min-width: 0;
+
+}
+
+.ai-insight-title {
+
+    color: #032d60;
+
+    font-size: 0.62rem;
+
+    font-weight: 800;
+
+}
+
+.ai-insight-summary {
+
+    color: #3e5f85;
+
+    font-size: 0.62rem;
+
+    overflow: hidden;
+
+    text-overflow: ellipsis;
+
+    white-space: nowrap;
+
+}
+
+.ai-insight-chevron {
+
+    align-self: center;
+
+    color: #0176d3;
+
+    flex: 0 0 auto;
+
+    font-size: 0.58rem;
+
+    font-weight: 700;
 
 }
 
@@ -202,11 +295,11 @@ lightning-helptext {
 
     background: #fff;
 
-    border: 1px solid #d8dde6;
+    border: 1px solid #b8d9ff;
 
-    border-radius: 0.35rem;
+    border-radius: 0.5rem;
 
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.16);
+    box-shadow: 0 8px 20px rgba(8, 45, 92, 0.18);
 
     color: #181818;
 
@@ -214,7 +307,7 @@ lightning-helptext {
 
     font-size: 0.75rem;
 
-    left: 1.2rem;
+    left: 0;
 
     line-height: 1.35;
 
@@ -226,7 +319,7 @@ lightning-helptext {
 
     position: absolute;
 
-    top: 0;
+    top: calc(100% + 0.35rem);
 
     white-space: normal;
 
@@ -234,7 +327,8 @@ lightning-helptext {
 
 }
 
-.ai-confidence-row:hover .ai-explanation-panel,
+.ai-insight-row:hover .ai-explanation-panel,
+.ai-insight-trigger:focus + .ai-explanation-panel,
 .ai-explanation-panel.is-open {
 
     display: block;
