@@ -89,6 +89,11 @@ export default class AcademicApplicationForm
 
     @track aiFieldMessages = {};
 
+    @track aiLoading = false;
+
+    @track aiStatus =
+        'Finding the right answers, one field at a time...';
+
     @track canUseAdminApplicationContext = false;
 
     @track adminApplicationId = '';
@@ -144,6 +149,23 @@ export default class AcademicApplicationForm
         return this.isSubmissionRecordMode
             ? 'application-layout record-page-layout'
             : 'application-layout';
+
+    }
+
+    get maxAccessiblePage() {
+
+        return this.canUseAdminApplicationContext
+            ? this.totalPages
+            : Math.min(
+                this.totalPages,
+                5
+            );
+
+    }
+
+    get sidebarTotalPages() {
+
+        return this.totalPages;
 
     }
 
@@ -302,6 +324,16 @@ export default class AcademicApplicationForm
 
                 this.currentPage =
                     draftResult.currentPage || 1;
+
+                if (
+                    this.currentPage >
+                    this.maxAccessiblePage
+                ) {
+
+                    this.currentPage =
+                        this.maxAccessiblePage;
+
+                }
 
                 const sanitizedDraft =
                     this.sanitizeFormData(
@@ -756,6 +788,17 @@ export default class AcademicApplicationForm
         // AUTO SAVE
 
         this.handleAutoSave();
+
+    }
+
+    handleAIStatusChange(event) {
+
+        this.aiLoading =
+            event.detail?.isLoading === true;
+
+        this.aiStatus =
+            event.detail?.message ||
+            'Finding the right answers, one field at a time...';
 
     }
 
@@ -3009,7 +3052,7 @@ export default class AcademicApplicationForm
 
         if (
             this.currentPage <
-            this.totalPages
+            this.maxAccessiblePage
         ) {
 
             this.currentPage += 1;
@@ -3484,7 +3527,7 @@ export default class AcademicApplicationForm
     get isLastPage() {
 
         return this.currentPage ===
-               this.totalPages;
+               this.maxAccessiblePage;
 
     }
 

@@ -5917,7 +5917,9 @@ public with sharing class UserDataDiscoveryService {
                     'expected graduation',
                     'graduate',
                     'finish degree',
+                    'finish your degree',
                     'complete degree',
+                    'completed your degree',
                     'degree completion'
                 }
             )
@@ -8872,100 +8874,7 @@ public with sharing class UserDataDiscoveryService {
 
         }
 
-        String bestSentence =
-            findBestKnowledgeSentence(
-                questionText,
-                knowledge
-            );
-
-        if (
-
-            String.isBlank(
-                bestSentence
-            )
-
-        ) {
-
-            return null;
-
-        }
-
-        String type =
-            String.isBlank(
-                questionType
-            )
-                ? ''
-                : questionType.toLowerCase();
-
-        if (
-
-            type == 'date' ||
-            normalizeQuestionText(
-                questionText
-            ).contains(
-                'date'
-            )
-
-        ) {
-
-            return extractGraduationDate(
-                bestSentence
-            );
-
-        }
-
-        if (
-
-            type == 'number'
-
-        ) {
-
-            Matcher numberMatcher =
-                Pattern.compile(
-                    '(-?\\d+(?:\\.\\d+)?)'
-                ).matcher(
-                    bestSentence
-                );
-
-            if (
-
-                numberMatcher.find()
-
-            ) {
-
-                return numberMatcher.group(1);
-
-            }
-
-            return null;
-
-        }
-
-        if (
-
-            type == 'checkbox'
-
-        ) {
-
-            return normalizeGenericAnswerForQuestionType(
-                inferPositiveSentence(
-                    bestSentence
-                )
-                    ? 'true'
-                    : 'false',
-                questionType,
-                picklistValues
-            );
-
-        }
-
-        return normalizeGenericAnswerForQuestionType(
-            cleanGenericAnswer(
-                bestSentence
-            ),
-            questionType,
-            picklistValues
-        );
+        return null;
 
     }
 

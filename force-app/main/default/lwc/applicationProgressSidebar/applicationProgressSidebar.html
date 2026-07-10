@@ -6,7 +6,7 @@
 
             <div
                 key={step.id}
-                class="progress-step">
+                class={step.stepClass}>
 
                 <div class={step.circleClass}>
 
@@ -22,6 +22,14 @@
 
                 <div class="progress-label">
                     {step.label}
+
+                    <template if:true={step.note}>
+
+                        <span class="progress-note">
+                            {step.note}
+                        </span>
+
+                    </template>
                 </div>
 
             </div>

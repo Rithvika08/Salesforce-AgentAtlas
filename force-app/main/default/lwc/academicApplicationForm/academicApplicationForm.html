@@ -14,7 +14,8 @@
 
                 <c-application-progress-sidebar
                     current-page={currentPage}
-                    total-pages={totalPages}>
+                    total-pages={sidebarTotalPages}
+                    can-access-admin-page={canUseAdminApplicationContext}>
                 </c-application-progress-sidebar>
 
             </div>
@@ -26,16 +27,6 @@
                 <div class="form-workspace">
 
                     <div class="form-main">
-
-                <!-- AI PROGRESS -->
-
-                <c-ai-progress-indicator
-
-                    is-loading={aiLoading}
-
-                    status-message={aiStatus}>
-
-                </c-ai-progress-indicator>
 
                 <!-- SAVE STATUS -->
 
@@ -123,7 +114,9 @@
 
                 <!-- BUTTONS -->
 
-                <div class="sticky-footer">
+                <template if:false={isSubmitted}>
+
+                    <div class="sticky-footer">
 
                     <button
                         class="slds-button slds-button_neutral"
@@ -161,7 +154,9 @@
 
                     </template>
 
-                </div>
+                    </div>
+
+                </template>
 
                     </div>
 
@@ -181,7 +176,8 @@
 
                             target-application-id={activeAdminApplicationId}
 
-                            onaifilled={handleAIFilled}>
+                            onaifilled={handleAIFilled}
+                            onaistatuschange={handleAIStatusChange}>
 
                         </c-ai-form-filler-button>
 
@@ -193,7 +189,8 @@
                             target-application-id={activeAdminApplicationId}
                             can-update-admin-fields={canUseAdminApplicationContext}
                             onfieldaimessage={handleFieldAIMessage}
-                            onaifilled={handleAIFilled}>
+                            onaifilled={handleAIFilled}
+                            onaistatuschange={handleAIStatusChange}>
 
                         </c-ai-form-filler-chat>
 
@@ -257,6 +254,41 @@
             </div>
 
         </div>
+
+        <template if:true={aiLoading}>
+
+            <div class="ai-page-loading-overlay">
+
+                <div class="ai-page-loading-card">
+
+                    <div
+                        class="ai-loading-mark"
+                        role="status"
+                        aria-label="AI is filling the form">
+
+                        <span></span>
+                        <span></span>
+                        <span></span>
+
+                    </div>
+
+                    <p class="ai-page-loading-title">
+
+                        Sprinkling a little AI on your form...
+
+                    </p>
+
+                    <p class="ai-page-loading-message">
+
+                        Finding the right answers, one field at a time...
+
+                    </p>
+
+                </div>
+
+            </div>
+
+        </template>
 
     </lightning-card>
 

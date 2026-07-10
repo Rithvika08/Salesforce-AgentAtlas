@@ -274,6 +274,22 @@ public without sharing class EinsteinPromptExtractionService {
                     }
                 );
 
+            if (
+
+                isUnsupportedGeneralKnowledgeQuestion(
+                    question
+                )
+
+            ) {
+
+                return buildNoDataResult(
+                    question.questionId,
+                    parsed,
+                    'Question is not tied to saved Salesforce/applicant data, so the answer was not used.'
+                );
+
+            }
+
             Boolean noDataFound =
                 isNoDataResponse(
                     parsed,
@@ -854,6 +870,29 @@ public without sharing class EinsteinPromptExtractionService {
                         'replacementValue'
                     }
                 );
+
+            if (
+
+                isUnsupportedGeneralKnowledgeQuestion(
+                    questionById.get(
+                        questionId
+                    )
+                )
+
+            ) {
+
+                results.put(
+                    questionId,
+                    buildNoDataResult(
+                        questionId,
+                        answer,
+                        'Question is not tied to saved Salesforce/applicant data, so the answer was not used.'
+                    )
+                );
+
+                continue;
+
+            }
 
             Boolean noDataFound =
                 isNoDataResponse(
@@ -1751,6 +1790,69 @@ public without sharing class EinsteinPromptExtractionService {
                     }
                 )
             );
+    }
+
+    private static Boolean isUnsupportedGeneralKnowledgeQuestion(
+
+        UserDataDiscoveryService.FormQuestion question
+
+    ) {
+
+        if (
+
+            question == null ||
+            String.isBlank(
+                question.questionText
+            )
+
+        ) {
+
+            return false;
+
+        }
+
+        String normalizedQuestion =
+            normalizeText(
+                question.questionText
+            );
+
+        if (
+
+            normalizedQuestion.startsWith(
+                'why '
+            ) &&
+            !normalizedQuestion.contains(
+                'why this university'
+            ) &&
+            !normalizedQuestion.contains(
+                'why this school'
+            ) &&
+            !normalizedQuestion.contains(
+                'why this program'
+            ) &&
+            !normalizedQuestion.contains(
+                'choose this university'
+            ) &&
+            !normalizedQuestion.contains(
+                'choose this school'
+            ) &&
+            !normalizedQuestion.contains(
+                'choose this program'
+            )
+
+        ) {
+
+            return true;
+
+        }
+
+        return normalizedQuestion.contains(
+            'leaves are green'
+        ) ||
+            normalizedQuestion.contains(
+                'leaf green'
+            );
+
     }
 
     private static UserDataDiscoveryService.DataDiscoveryResult buildNoDataResult(

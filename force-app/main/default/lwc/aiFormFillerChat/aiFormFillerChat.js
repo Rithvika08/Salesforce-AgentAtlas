@@ -48,6 +48,8 @@ export default class AiFormFillerChat
 
     @track isProcessing = false;
 
+    @track usePageOverlay = false;
+
     messageCounter = 1;
 
     pendingField = null;
@@ -69,6 +71,13 @@ export default class AiFormFillerChat
         return this.isProcessing ||
             !this.draftPrompt ||
             !this.draftPrompt.trim();
+
+    }
+
+    get showInlineProcessing() {
+
+        return this.isProcessing &&
+            !this.usePageOverlay;
 
     }
 
@@ -190,6 +199,20 @@ export default class AiFormFillerChat
 
         this.draftPrompt = '';
         this.isProcessing = true;
+        this.usePageOverlay =
+            this.shouldRunAutoFill(
+                prompt
+            );
+
+        if (
+            this.usePageOverlay
+        ) {
+
+            this.notifyAIStatus(
+                true
+            );
+
+        }
 
         try {
 
@@ -428,8 +451,32 @@ export default class AiFormFillerChat
         finally {
 
             this.isProcessing = false;
+            this.usePageOverlay = false;
+
+            this.notifyAIStatus(
+                false
+            );
 
         }
+
+    }
+
+    notifyAIStatus(isLoading) {
+
+        this.dispatchEvent(
+            new CustomEvent(
+                'aistatuschange',
+                {
+                    detail: {
+                        isLoading,
+                        message:
+                            'Finding the right answers, one field at a time...'
+                    },
+                    bubbles: true,
+                    composed: true
+                }
+            )
+        );
 
     }
 

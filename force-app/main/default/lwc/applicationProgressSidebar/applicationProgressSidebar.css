@@ -67,6 +67,22 @@
 
 }
 
+.progress-circle.restricted {
+
+    background: #eef1f5;
+
+    border: 2px dashed #a8b0bd;
+
+    color: #6b7280;
+
+}
+
+.restricted-step {
+
+    opacity: 0.58;
+
+}
+
 /* LABEL */
 
 .progress-label {
@@ -78,5 +94,23 @@
     color: #16325c;
 
     line-height: 1.3;
+
+}
+
+.progress-note {
+
+    display: block;
+
+    color: #6b7280;
+
+    font-size: 0.68rem;
+
+    font-weight: 700;
+
+    letter-spacing: 0.02em;
+
+    margin-top: 0.12rem;
+
+    text-transform: uppercase;
 
 }

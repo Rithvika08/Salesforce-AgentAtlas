@@ -31,7 +31,7 @@ export default class AiFormFillerButton
     @track sourceBreakdown = [];
 
     @track processingMessage =
-        'AI is analyzing your data...';
+        'Sprinkling a little AI on your form...';
 
     buttonLabel = 'Fill with AI';
 
@@ -74,7 +74,12 @@ export default class AiFormFillerButton
         try {
 
             this.processingMessage =
-                'Gathering data...';
+                'Sprinkling a little AI on your form...';
+
+            this.notifyAIStatus(
+                true,
+                this.processingMessage
+            );
 
             const result =
                 await fillFormWithAI({
@@ -83,7 +88,12 @@ export default class AiFormFillerButton
                 });
 
             this.processingMessage =
-                'AI is filling your form...';
+                'Finding the right answers, one field at a time...';
+
+            this.notifyAIStatus(
+                true,
+                this.processingMessage
+            );
 
             await this.processResults(result);
 
@@ -103,7 +113,30 @@ export default class AiFormFillerButton
 
             this.showButton = true;
 
+            this.notifyAIStatus(
+                false,
+                ''
+            );
+
         }
+
+    }
+
+    notifyAIStatus(isLoading, message) {
+
+        this.dispatchEvent(
+            new CustomEvent(
+                'aistatuschange',
+                {
+                    detail: {
+                        isLoading,
+                        message
+                    },
+                    bubbles: true,
+                    composed: true
+                }
+            )
+        );
 
     }
 
